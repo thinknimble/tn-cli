@@ -16,13 +16,15 @@ git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
 
 ### Install Just on MacOS
 
-_With [Homebrew](https://brew.sh/):_
+Using [Homebrew](https://brew.sh/):
 
 ```sh
 brew install just
 ```
 
 ### Install Just on Ubuntu
+
+Using the `apt` package manager. You must first add the `makedeb` source listing:
 
 ```sh
 wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' | gpg --dearmor | sudo tee /usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg 1> /dev/null
@@ -34,9 +36,22 @@ sudo apt install just
 
 ### Create an Alias and Install Completions
 
+Easily run `tncli {{command}}` from anywhere by creating an alias in your `~/.zshrc` or `~/.bashrc`.
+
+Using `zsh`:
+
 ```bash
+# Set up ~/.zshrc
+# TODO
+```
+
+Using `bash`:
+
+```bash
+# Set up ~/.bashrc
 echo alias tncli='just -f ~/.tn/cli/justfile -d .' >> ~/.bashrc
 mkdir -p ~/.local/share/bash-completion/completions && cp ~/.tn/cli/bash-completions/tncli ~/.local/share/bash-completion/completions/tncli
+source ~/.basrch  # or restart your terminal
 ```
 
 ## Contributing New Commands - aka "Recipes"
@@ -44,3 +59,5 @@ mkdir -p ~/.local/share/bash-completion/completions && cp ~/.tn/cli/bash-complet
 It's easy to contribute new commands to tn-cli, just add some commands to the `justfile` and open a Pull Request.
 
 Check out the [Quick Start](https://github.com/casey/just?tab=readme-ov-file#quick-start) documentation to learn the syntax for `just` commands (aka "recipes"). Commands can be written for just about any OS and language. For example, you can write Python scripts directly in the `justfile`. This makes for an ideal wrapper around other CLI tools.
+
+NOTE: You will probably want to install a just syntax highlighter for your editor. For VSCode, search the extension marketplace for "just."
