@@ -44,9 +44,11 @@ Using `zsh`:
 # Set up ~/.zshrc
 echo alias tncli='just -f ~/.tn/cli/justfile -d .' >> ~/.zshrc
 
+# Install completions for zsh
 mkdir -p ~/.zsh/completions
 cp ~/.tn/cli/completions/zsh-completions/tncli ~/.zsh/completions/_tncli
 
+# Add completions to ~/.zshrc
 echo fpath+=~/.zsh/completions >> ~/.zshrc
 echo "zstyle ':completion:*:descriptions' format \"%U%B%d%b%u\"" >> ~/.zshrc
 echo "zstyle ':completion:*:messages' format \"%F{green}%d%f\"" >> ~/.zshrc
@@ -61,6 +63,8 @@ Using `bash`:
 ```bash
 # Set up ~/.bashrc
 echo alias tncli='just -f ~/.tn/cli/justfile -d .' >> ~/.bashrc
+
+# Install completions for bash
 mkdir -p ~/.local/share/bash-completion/completions && cp ~/.tn/cli/bash-completions/tncli ~/.local/share/bash-completion/completions/tncli
 source ~/.bashrc  # or restart your terminal
 ```
