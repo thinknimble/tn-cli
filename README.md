@@ -42,7 +42,16 @@ Using `zsh`:
 
 ```bash
 # Set up ~/.zshrc
-# TODO
+echo alias tncli='just -f ~/.tn/cli/justfile -d .' >> ~/.zshrc
+
+mkdir -p ~/.zsh/completions
+cp ~/.tn/cli/completions/zsh-completions/tncli ~/.zsh/completions/_tncli
+
+echo fpath+=~/.zsh/completions >> ~/.zshrc
+echo "zstyle ':completion:*:descriptions' format \"%U%B%d%b%u\"" >> ~/.zshrc
+echo "zstyle ':completion:*:messages' format \"%F{green}%d%f\"" >> ~/.zshrc
+echo autoload -Uz compinit >> ~/.zshrc
+echo compinit -u >> ~/.zshrc
 ```
 
 Using `bash`:
@@ -51,7 +60,7 @@ Using `bash`:
 # Set up ~/.bashrc
 echo alias tncli='just -f ~/.tn/cli/justfile -d .' >> ~/.bashrc
 mkdir -p ~/.local/share/bash-completion/completions && cp ~/.tn/cli/bash-completions/tncli ~/.local/share/bash-completion/completions/tncli
-source ~/.basrch  # or restart your terminal
+source ~/.bashrc  # or restart your terminal
 ```
 
 ## Contributing New Commands - aka "Recipes"
