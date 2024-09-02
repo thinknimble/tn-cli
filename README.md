@@ -56,7 +56,7 @@ source ~/.basrch  # or restart your terminal
 
 ## Contributing New Commands - aka "Recipes"
 
-It's easy to contribute new commands to tn-cli, just add some commands to the `justfile` and open a Pull Request.
+It's easy to contribute new commands to tn-cli, simply add some commands to the `justfile` and open a Pull Request.
 
 Check out the [Quick Start](https://github.com/casey/just?tab=readme-ov-file#quick-start) documentation to learn the syntax for `just` commands (aka "recipes"). Commands can be written for just about any OS and language. For example, you can write Python scripts directly in the `justfile`. This makes for an ideal wrapper around other CLI tools.
 

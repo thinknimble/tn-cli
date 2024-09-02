@@ -9,6 +9,7 @@ os-info:
 #
 # Re-clone and reinstall tn-cli
 #
+[group('tn-cli')]
 update:
   git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
 
@@ -17,25 +18,21 @@ update:
 #
 alias bootstrap := new-project
 
+[group('bootstrapper')]
 new-project:
-  cookiecutter git@github.com:thinknimble/tn-spa-bootstrapper.git
+  python3 -m pip install --user cookiecutter
+  python3 -m pip install --user Jinja2 jinja2-time
+  python3 -m cookiecutter git@github.com:thinknimble/tn-spa-bootstrapper.git
 
 #
 # AWS Helpers
 #
-aws-make-s3-bucket stack_name bucket_name region=us-east-1:
-  aws cloudformation create-stack \
-    --stack-name {{stack_name}} \
-    --template-url 'https://tn-s3-cloud-formation.s3.amazonaws.com/aws-s3-cloud-formation.yaml' \
-    --region {{region}} \
-    --parameters ParameterKey=BucketNameParameter,ParameterValue={{bucket_name}} \
-    --capabilities CAPABILITY_NAMED_IAM
+# The AWS CLI is required for these commands to work.
+#
+[group('aws')]
+aws-make-s3-bucket project_name profile='default' region='us-east-1':
+  aws cloudformation create-stack --stack-name {{project_name}}-s3-stack --template-url 'https://tn-s3-cloud-formation.s3.amazonaws.com/aws-s3-cloud-formation.yaml' --region {{region}} --parameters ParameterKey=BucketNameParameter,ParameterValue={{project_name}} --capabilities CAPABILITY_NAMED_IAM --profile={{profile}}
 
-aws-enable-bedrock stack_name project_name region=us-east-1 model=*:
-  aws cloudformation create-stack \
-    --stack-name {{stack_name}} \
-    --template-url 'https://tn-s3-cloud-formation.s3.amazonaws.com/bedrock-user-permissions.yaml' \
-    --region {{region}} \
-    --parameters ParameterKey=ProjectName,ParameterValue={{project_name}} \
-    ParameterKey={{model}} \
-    --capabilities CAPABILITY_NAMED_IAM
+[group('aws')]
+aws-enable-bedrock project_name profile='default' region='us-east-1' model='*':
+  aws cloudformation create-stack --stack-name {{project_name}}-bedrock-stack --template-url 'https://tn-s3-cloud-formation.s3.amazonaws.com/bedrock-user-permissions.yaml' --region {{region}} --parameters ParameterKey=ProjectName,ParameterValue={{project_name}} ParameterKey=AllowedModels,ParameterValue={{model}} --capabilities CAPABILITY_NAMED_IAM --profile={{profile}}
