@@ -52,6 +52,8 @@ echo "zstyle ':completion:*:descriptions' format \"%U%B%d%b%u\"" >> ~/.zshrc
 echo "zstyle ':completion:*:messages' format \"%F{green}%d%f\"" >> ~/.zshrc
 echo autoload -Uz compinit >> ~/.zshrc
 echo compinit -u >> ~/.zshrc
+
+source ~/.zshrc  # or restart your terminal
 ```
 
 Using `bash`:
