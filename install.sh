@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # Check OS type
 OS_TYPE=$(uname)
@@ -6,8 +6,8 @@ OS_TYPE=$(uname)
 #
 # First, install system-level dependencies
 #
-if [ "$OS_TYPE" == "Darwin" ]; then
-    echo "MacOS Detected.\n"
+if [[ "$OS_TYPE" == "Darwin" ]]; then
+    echo "MacOS Detected."
 
     # Check if Homebrew is installed
     echo "Checking if Homebrew is installed..."
@@ -15,7 +15,7 @@ if [ "$OS_TYPE" == "Darwin" ]; then
         echo "Homebrew is not installed. Installing Homebrew..."
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     else
-        echo "Homebrew is already installed.\n"
+        echo "Homebrew is already installed."
     fi
 
     # Check if git is installed
@@ -24,7 +24,7 @@ if [ "$OS_TYPE" == "Darwin" ]; then
         echo "git is not installed. Installing git..."
         brew install git
     else
-        echo "git is already installed.\n"
+        echo "git is already installed."
     fi
 
     # Check if just is installed
@@ -46,15 +46,25 @@ if [ "$OS_TYPE" == "Darwin" ]; then
         git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
     fi
 
+    ZSH_COMPLETIONS="source ~/.tn/cli/completions/zsh-completions/tncli"
+    echo "Checking if ZSH_COMPLETIONS is added to ~/.zshrc..."
+    if ! grep -q "${ZSH_COMPLETIONS}" ~/.zshrc; then
+        echo "Adding ZSH_COMPLETIONS to ~/.zshrc..."
+        echo '' >> ~/.zshrc
+        echo '# Load ZSH Completions for TN CLI' >> ~/.zshrc
+        echo "${ZSH_COMPLETIONS}" >> ~/.zshrc
+    else
+        echo "tn-cli completions already added to ~/.zshrc."
+    fi
+
     echo
-    echo "\033[32mSUCCESS!\033[0m"
+    echo -e "\033[32mSUCCESS!\033[0m"
     echo "TN CLI Installation is complete."
     echo "Please restart your terminal."
-
     exit 0
 fi
 
-if [ "$OS_TYPE" == "Darwin" ]; then
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Check if it's Ubuntu
     if grep -q "Ubuntu" /etc/os-release; then
         echo "Ubuntu Detected"
@@ -101,6 +111,7 @@ if [ "$OS_TYPE" == "Darwin" ]; then
     if ! grep -q "$BASH_ALIAS" ~/.bashrc; then
         echo "Adding BASH_ALIAS to ~/.bashrc..."
         echo '' >> ~/.bashrc
+        echo '# Load ZSH Completions for TN CLI' >> ~/.bashrc
         echo "$BASH_ALIAS" >> ~/.bashrc
     else
         echo "tn-cli alias already added to ~/.bashrc."
@@ -108,11 +119,13 @@ if [ "$OS_TYPE" == "Darwin" ]; then
 
     # Install completions for bash
     mkdir -p ~/.local/share/bash-completion/completions
-    cp ~/.tn/cli/bash-completions/tncli ~/.local/share/bash-completion/completions/tn
+    cp ~/.tn/cli/completions/bash-completions/tncli ~/.local/share/bash-completion/completions/tn
 
+    echo
+    echo -e "\033[32mSUCCESS!\033[0m"
     echo "TN CLI Installation is complete!"
     echo "Please restart your terminal."
-
+    exit 0
 else
     echo "Your OS is not recognized or not supported."
     exit 1
