@@ -55,7 +55,7 @@ make-tn-models project_url api_key endpoint='/api/users/':
   #!/usr/bin/env bash
   if ! command -v bunx &> /dev/null
   then
-    echo "Please run 'just install-bun' to install bunx first."
+    echo "Please run 'tn install-bun' to install bunx first."
     exit 1
   fi
   bunx @thinknimble/tnm-cli read '{{project_url}}/api/schema/?format=yaml' -t '{{api_key}}' -u '{{endpoint}}'
