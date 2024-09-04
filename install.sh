@@ -46,6 +46,16 @@ if [[ "$OS_TYPE" == "Darwin" ]]; then
         git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
     fi
 
+    ZSH_COMPLETIONS="source ~/.tn/cli/completions/zsh-completions/tncli"
+    echo "Checking if ZSH_COMPLETIONS is added to ~/.zshrc..."
+    if ! grep -q "${ZSH_COMPLETIONS}" ~/.zshrc; then
+        echo "Adding ZSH_COMPLETIONS to ~/.zshrc..."
+        echo '' >> ~/.zshrc
+        echo "${ZSH_COMPLETIONS}" >> ~/.zshrc
+    else
+        echo "tn-cli completions already added to ~/.zshrc."
+    fi
+
     echo
     echo -e "\033[32mSUCCESS!\033[0m"
     echo "TN CLI Installation is complete."
