@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Check OS type
 OS_TYPE=$(uname)
@@ -6,7 +6,7 @@ OS_TYPE=$(uname)
 #
 # First, install system-level dependencies
 #
-if [ "$OS_TYPE" == "Darwin" ]; then
+if [[ "$OS_TYPE" == "Darwin" ]]; then
     echo "MacOS Detected.\n"
 
     # Check if Homebrew is installed
@@ -54,7 +54,7 @@ if [ "$OS_TYPE" == "Darwin" ]; then
     exit 0
 fi
 
-if [ "$OS_TYPE" == "Darwin" ]; then
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Check if it's Ubuntu
     if grep -q "Ubuntu" /etc/os-release; then
         echo "Ubuntu Detected"
@@ -108,7 +108,7 @@ if [ "$OS_TYPE" == "Darwin" ]; then
 
     # Install completions for bash
     mkdir -p ~/.local/share/bash-completion/completions
-    cp ~/.tn/cli/bash-completions/tncli ~/.local/share/bash-completion/completions/tn
+    cp ~/.tn/cli/completions/bash-completions/tncli ~/.local/share/bash-completion/completions/tn
 
     echo "TN CLI Installation is complete!"
     echo "Please restart your terminal."
