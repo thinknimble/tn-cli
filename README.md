@@ -12,7 +12,9 @@ TN CLI uses a command runner tool called `just` (https://github.com/casey/just),
 curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/thinknimble/tn-cli/main/install.sh | sh
 ```
 
-After installing, restart your terminal and try the `tncli` command. You should see a list of "Available Recipes." like this:
+After installing, restart your terminal.
+
+Now try out the `tn` command. Type `tn` and press the `↵ Enter` key. You should see a list of "Available Recipes." like this:
 
 ```sh
 Available recipes:
