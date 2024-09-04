@@ -61,7 +61,6 @@ if [[ "$OS_TYPE" == "Darwin" ]]; then
     echo -e "\033[32mSUCCESS!\033[0m"
     echo "TN CLI Installation is complete."
     echo "Please restart your terminal."
-
     exit 0
 fi
 
@@ -126,7 +125,7 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     echo -e "\033[32mSUCCESS!\033[0m"
     echo "TN CLI Installation is complete!"
     echo "Please restart your terminal."
-
+    exit 0
 else
     echo "Your OS is not recognized or not supported."
     exit 1
