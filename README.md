@@ -6,67 +6,25 @@ Convenient and sharable command-line tools for nimble thinkers.
 
 TN CLI uses a command runner tool called `just` (https://github.com/casey/just), which similar to `make`, but is "Just a Command Runner" as opposed to a build system.
 
-## Set Up
-
-First, get tn-cli. It MUST be installed in ~/.tn/cli:
+## Installation
 
 ```sh
-git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/thinknimble/tn-cli/main/install.sh | sh
 ```
 
-### Install Just on MacOS
-
-Using [Homebrew](https://brew.sh/):
+After installing, restart your terminal and try the `tncli` command. You should see a list of "Available Recipes." like this:
 
 ```sh
-brew install just
-```
+Available recipes:
+    os-info
 
-### Install Just on Ubuntu
+    [aws]
+    aws-enable-bedrock project_name profile='default' region='us-east-1' model='*'
+    aws-make-s3-bucket project_name profile='default' region='us-east-1'
 
-Using the `apt` package manager. You must first add the `makedeb` source listing:
-
-```sh
-wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' | gpg --dearmor | sudo tee /usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg 1> /dev/null
-echo "deb [arch=all,$(dpkg --print-architecture) signed-by=/usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg] https://proget.makedeb.org prebuilt-mpr $(lsb_release -cs)" | sudo tee /etc/apt/sources.list.d/prebuilt-mpr.list
-sudo apt update
-
-sudo apt install just
-```
-
-### Create an Alias and Install Completions
-
-Easily run `tncli {{command}}` from anywhere by creating an alias in your `~/.zshrc` or `~/.bashrc`.
-
-Using `zsh`:
-
-```bash
-# Set up ~/.zshrc
-echo alias tncli='just -f ~/.tn/cli/justfile -d .' >> ~/.zshrc
-
-# Install completions for zsh
-mkdir -p ~/.zsh/completions
-cp ~/.tn/cli/completions/zsh-completions/tncli ~/.zsh/completions/_tncli
-
-# Add completions to ~/.zshrc
-echo fpath+=~/.zsh/completions >> ~/.zshrc
-echo "zstyle ':completion:*:descriptions' format \"%U%B%d%b%u\"" >> ~/.zshrc
-echo "zstyle ':completion:*:messages' format \"%F{green}%d%f\"" >> ~/.zshrc
-echo autoload -Uz compinit >> ~/.zshrc
-echo compinit -u >> ~/.zshrc
-
-source ~/.zshrc  # or restart your terminal
-```
-
-Using `bash`:
-
-```bash
-# Set up ~/.bashrc
-echo alias tncli='just -f ~/.tn/cli/justfile -d .' >> ~/.bashrc
-
-# Install completions for bash
-mkdir -p ~/.local/share/bash-completion/completions && cp ~/.tn/cli/bash-completions/tncli ~/.local/share/bash-completion/completions/tncli
-source ~/.bashrc  # or restart your terminal
+    [bootstrapper]
+    new-project
+    bootstrap   # alias for `new-project`
 ```
 
 ## Contributing New Commands - aka "Recipes"
