@@ -7,7 +7,7 @@ OS_TYPE=$(uname)
 # First, install system-level dependencies
 #
 if [[ "$OS_TYPE" == "Darwin" ]]; then
-    echo "MacOS Detected.\n"
+    echo "MacOS Detected."
 
     # Check if Homebrew is installed
     echo "Checking if Homebrew is installed..."
@@ -15,7 +15,7 @@ if [[ "$OS_TYPE" == "Darwin" ]]; then
         echo "Homebrew is not installed. Installing Homebrew..."
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     else
-        echo "Homebrew is already installed.\n"
+        echo "Homebrew is already installed."
     fi
 
     # Check if git is installed
@@ -24,7 +24,7 @@ if [[ "$OS_TYPE" == "Darwin" ]]; then
         echo "git is not installed. Installing git..."
         brew install git
     else
-        echo "git is already installed.\n"
+        echo "git is already installed."
     fi
 
     # Check if just is installed
@@ -47,7 +47,7 @@ if [[ "$OS_TYPE" == "Darwin" ]]; then
     fi
 
     echo
-    echo "\033[32mSUCCESS!\033[0m"
+    echo -e "\033[32mSUCCESS!\033[0m"
     echo "TN CLI Installation is complete."
     echo "Please restart your terminal."
 
@@ -110,6 +110,8 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     mkdir -p ~/.local/share/bash-completion/completions
     cp ~/.tn/cli/completions/bash-completions/tncli ~/.local/share/bash-completion/completions/tn
 
+    echo
+    echo -e "\033[32mSUCCESS!\033[0m"
     echo "TN CLI Installation is complete!"
     echo "Please restart your terminal."
 
