@@ -51,6 +51,7 @@ if [[ "$OS_TYPE" == "Darwin" ]]; then
     if ! grep -q "${ZSH_COMPLETIONS}" ~/.zshrc; then
         echo "Adding ZSH_COMPLETIONS to ~/.zshrc..."
         echo '' >> ~/.zshrc
+        echo '# Load ZSH Completions for TN CLI' >> ~/.zshrc
         echo "${ZSH_COMPLETIONS}" >> ~/.zshrc
     else
         echo "tn-cli completions already added to ~/.zshrc."
@@ -111,6 +112,7 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     if ! grep -q "$BASH_ALIAS" ~/.bashrc; then
         echo "Adding BASH_ALIAS to ~/.bashrc..."
         echo '' >> ~/.bashrc
+        echo '# Load ZSH Completions for TN CLI' >> ~/.bashrc
         echo "$BASH_ALIAS" >> ~/.bashrc
     else
         echo "tn-cli alias already added to ~/.bashrc."
