@@ -58,4 +58,4 @@ make-tn-models project_url api_key endpoint='/api/users/':
     echo "Please run 'just install-bun' to install bunx first."
     exit 1
   fi
-  bunx @thinknimble/tnm-cli read '{{project_url}}/api/swagger.yaml' -t {{api_key}} -u {{endpoint}}
+  bunx @thinknimble/tnm-cli read '{{project_url}}/api/schema/?format=yaml' -t '{{api_key}}' -u '{{endpoint}}'
