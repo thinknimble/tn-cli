@@ -10,35 +10,54 @@
             padding: 0; 
             font-family: Arial, sans-serif;
             background-color: rgba(20, 20, 20, 1);
-        }
-        body {
-            text-align: center;
             color: white;
+        }
+        .content {
+            max-width: 32rem;
+            margin: 0 auto;
+            padding: 0 0.5rem;
+        }
+        .align-center {
+            text-align: center;
+            max-width: 32rem;
+            margin: 0 auto;
+        }
+        .code {
+            background-color: rgba(30, 30, 30, 1);
+            overflow-x: auto;
+        }
+        .text-green {
+            color: #00ff00;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
-    <h1>TN CLI</h1>
-    <img src="https://gravatar.com/userimage/8749626/34ded6bbe7413b68d1a872b5348e75de.jpeg?size=256">
+    <div class="content align-center">
+        <h1>TN CLI</h1>
+        <img src="https://gravatar.com/userimage/8749626/34ded6bbe7413b68d1a872b5348e75de.jpeg?size=256">
+    </div>
 
-    <h2>Install:</h2>
-    <pre>curl -fsSL https://nimbl.sh/install.sh | bash</pre>
-
-    <h2>Usage:</h2>
-    <p>Type <code>tn</code> and press the <code>↵ Enter</code> key. You should see a list of "Available Recipes." like this:</p>
-    <pre>
-    Available recipes:
-        os-info
-
-        [aws]
-        aws-enable-bedrock project_name profile='default' region='us-east-1' model='*'
-        aws-make-s3-bucket project_name profile='default' region='us-east-1'
-
-        [bootstrapper]
-        new-project
-        bootstrap   # alias for `new-project`
-
-        # etc...
-    </pre>
+    <div class="content">
+        <h2>Install:</h2>
+        <pre class="code text-green">curl -fsSL https://nimbl.sh/install.sh | bash</pre>
+    
+        <h2>Usage:</h2>
+        <p>Type <code>tn</code> and press the <code>↵ Enter</code> key. You should see a list of "Available Recipes." like this:</p>
+        <pre class="code">
+        Available recipes:
+            os-info
+    
+            [aws]
+            aws-enable-bedrock project_name profile='default' region='us-east-1' model='*'
+            aws-make-s3-bucket project_name profile='default' region='us-east-1'
+    
+            [bootstrapper]
+            new-project
+            bootstrap   # alias for `new-project`
+    
+            # etc...
+        </pre>
+    </div>
 </body>
 </html>
