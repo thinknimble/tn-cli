@@ -14,6 +14,8 @@ curl -fsSL https://nimbl.sh/install.sh | bash
 
 After installing, restart your terminal.
 
+## Usage
+
 Now try out the `tn` command. Type `tn` and press the `↵ Enter` key. You should see a list of "Available Recipes." like this:
 
 ```sh
@@ -27,6 +29,8 @@ Available recipes:
     [bootstrapper]
     new-project
     bootstrap   # alias for `new-project`
+
+    # etc...
 ```
 
 ## Contributing New Commands - aka "Recipes"
