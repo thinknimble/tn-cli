@@ -9,7 +9,7 @@ TN CLI uses a command runner tool called `just` (https://github.com/casey/just),
 ## Installation
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/thinknimble/tn-cli/main/install.sh | bash
+curl -fsSL https://nimbl.sh/install.sh | bash
 ```
 
 After installing, restart your terminal.
