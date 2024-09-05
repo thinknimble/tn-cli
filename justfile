@@ -20,9 +20,9 @@ alias bootstrap := new-project
 
 [group('bootstrapper')]
 new-project:
-  python3 -m pip install --user cookiecutter
-  python3 -m pip install --user Jinja2 jinja2-time
-  python3 -m cookiecutter git@github.com:thinknimble/tn-spa-bootstrapper.git
+  pipx install cookiecutter
+  pipx inject cookiecutter Jinja2 jinja2-time
+  pipx run cookiecutter gh:thinknimble/tn-spa-bootstrapper
 
 #
 # AWS Helpers
