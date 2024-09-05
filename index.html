@@ -23,5 +23,22 @@
 
     <h2>Install:</h2>
     <pre>curl -fsSL https://nimbl.sh/install.sh | bash</pre>
+
+    <h2>Usage:</h2>
+    <p>Type <code>tn</code> and press the <code>↵ Enter</code> key. You should see a list of "Available Recipes." like this:</p>
+    <pre>
+    Available recipes:
+        os-info
+
+        [aws]
+        aws-enable-bedrock project_name profile='default' region='us-east-1' model='*'
+        aws-make-s3-bucket project_name profile='default' region='us-east-1'
+
+        [bootstrapper]
+        new-project
+        bootstrap   # alias for `new-project`
+
+        # etc...
+    </pre>
 </body>
 </html>
