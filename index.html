@@ -14,7 +14,8 @@
         }
         .content {
             max-width: 32rem;
-            margin: 0 0.5rem;
+            margin: 0 auto;
+            padding: 0 0.5rem;
         }
         .align-center {
             text-align: center;
@@ -24,6 +25,10 @@
         .code {
             background-color: rgba(30, 30, 30, 1);
             overflow-x: auto;
+        }
+        .text-green {
+            color: #00ff00;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -35,7 +40,7 @@
 
     <div class="content">
         <h2>Install:</h2>
-        <pre>curl -fsSL https://nimbl.sh/install.sh | bash</pre>
+        <pre class="code text-green">curl -fsSL https://nimbl.sh/install.sh | bash</pre>
     
         <h2>Usage:</h2>
         <p>Type <code>tn</code> and press the <code>↵ Enter</code> key. You should see a list of "Available Recipes." like this:</p>
