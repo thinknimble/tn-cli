@@ -20,9 +20,13 @@ alias bootstrap := new-project
 
 [group('bootstrapper')]
 new-project:
-  python3 -m pip install --user cookiecutter
-  python3 -m pip install --user Jinja2 jinja2-time
-  python3 -m cookiecutter git@github.com:thinknimble/tn-spa-bootstrapper.git
+  #!/usr/bin/env bash
+  if ! command -v pipx &> /dev/null; then
+    echo "ERROR: You must install pipx first: https://pipx.pypa.io/stable/installation/#installing-pipx"
+    exit 1
+  fi
+  pipx install cookiecutter
+  pipx run cookiecutter gh:thinknimble/tn-spa-bootstrapper
 
 #
 # AWS Helpers
@@ -45,8 +49,7 @@ aws-enable-bedrock project_name profile='default' region='us-east-1' model='*':
 [group('tn-models')]
 install-bun:
   #!/usr/bin/env bash
-  if ! command -v bunx &> /dev/null
-  then
+  if ! command -v bunx &> /dev/null; then
     curl -fsSL https://bun.sh/install | bash
   fi
 
