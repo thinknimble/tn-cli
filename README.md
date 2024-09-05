@@ -9,7 +9,7 @@ TN CLI uses a command runner tool called `just` (https://github.com/casey/just),
 ## Installation
 
 ```sh
-curl -fsSL https://nimbl.sh/install.sh | bash
+curl -fsSL https://nimbl.sh/install | bash
 ```
 
 After installing, restart your terminal.
