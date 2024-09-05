@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 # Check OS type
 OS_TYPE=$(uname)
