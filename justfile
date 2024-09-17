@@ -62,3 +62,36 @@ make-tn-models project_url api_key endpoint='/api/users/':
     exit 1
   fi
   bunx @thinknimble/tnm-cli read '{{project_url}}/api/schema/?format=yaml' -t '{{api_key}}' -u '{{endpoint}}'
+
+#
+# GitHub CLI
+#
+[group('github')]
+install-gh-cli:
+  #!/usr/bin/env bash
+  if ! command -v gh &> /dev/null; then
+    brew install gh
+  fi
+
+[group('github')]
+gh-auth:
+  gh auth login
+
+# See: https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28
+[group('github')]
+gh-prs repo='tn-spa-bootstrapper':
+  #!/usr/bin/env bash
+  echo "== thinknimble/{{repo}} =="
+  gh api \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    /repos/thinknimble/{{repo}}/pulls | \
+  jq -r '.[] | "- \(.title) (\(.html_url))"'
+
+[group('github')]
+gh-all-prs:
+  #!/usr/bin/env bash
+  IFS=',' read -ra projects <<< "$(cat .config | grep PROJECTS | cut -d'=' -f2)"
+  for project in "${projects[@]}"; do
+    tn gh-prs $project
+  done
