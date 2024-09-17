@@ -67,10 +67,22 @@ make-tn-models project_url api_key endpoint='/api/users/':
 # GitHub CLI
 #
 [group('github')]
-install-gh-cli:
+gh-install:
   #!/usr/bin/env bash
   if ! command -v gh &> /dev/null; then
-    brew install gh
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      brew install gh
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+      type -p curl >/dev/null || sudo apt install curl -y
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+      && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+      && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+      && sudo apt update \
+      && sudo apt install gh -y
+    else
+      echo "Unsupported operating system. Please install GitHub CLI manually."
+      exit 1
+    fi
   fi
 
 [group('github')]
@@ -93,5 +105,6 @@ gh-all-prs:
   #!/usr/bin/env bash
   IFS=',' read -ra projects <<< "$(cat .config | grep PROJECTS | cut -d'=' -f2)"
   for project in "${projects[@]}"; do
-    tn gh-prs $project
+    just --justfile {{justfile()}} gh-prs $project
+    echo ""
   done
