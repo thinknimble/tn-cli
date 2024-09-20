@@ -33,6 +33,48 @@ Available recipes:
     # etc...
 ```
 
+## Commands Reference
+
+You can view source code for available commands in the [justfile](justfile).
+
+`tn` - List available commands.
+
+### General Commands
+
+- `tn`: List all available commands.
+- `tn os-info`: Display the system architecture and operating system.
+
+### TN CLI Management
+
+- `tn update`: Re-clone and reinstall the tn-cli repository.
+
+### Project Bootstrapping
+
+- `tn new-project` or `tn bootstrap`: Bootstrap a new project using cookiecutter with the tn-spa-bootstrapper template.
+
+### AWS Helpers
+
+- `tn aws-make-s3-bucket <project_name> [profile] [region]`: Create an S3 bucket using AWS CloudFormation.
+
+  - Default profile: 'default'
+  - Default region: 'us-east-1'
+
+- `tn aws-enable-bedrock <project_name> [profile] [region] [model]`: Enable AWS Bedrock for a project using CloudFormation.
+
+  - Default profile: 'default'
+  - Default region: 'us-east-1'
+  - Default model: '\*' (all models)
+
+### TN Models Helpers
+
+- `tn install-bun`: Install the Bun runtime if not already installed.
+
+- `tn make-tn-models <project_url> <api_key> [endpoint]`: Generate TN models using the @thinknimble/tnm-cli tool.
+  - Default endpoint: '/api/users/'
+  - Requires Bun to be installed
+
+Note: For AWS helpers, the AWS CLI is required for these commands to work.
+
 ## Contributing New Commands - aka "Recipes"
 
 It's easy to contribute new commands to tn-cli, simply add some commands to the `justfile` and open a Pull Request.
