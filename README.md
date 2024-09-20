@@ -75,6 +75,24 @@ You can view source code for available commands in the [justfile](justfile).
 
 Note: For AWS helpers, the AWS CLI is required for these commands to work.
 
+### GitHub CLI
+
+- `tn gh-install`: Install the GitHub CLI (gh) if not already present.
+
+  - Uses Homebrew for macOS and apt for Linux.
+  - Displays a message for unsupported operating systems.
+
+- `tn gh-auth`: Initiate GitHub CLI authentication process.
+
+- `tn gh-prs [repo]`: List pull requests for a specified repository.
+
+  - Default repo: 'tn-spa-bootstrapper'
+  - Displays PR titles with links.
+
+- `tn gh-all-prs`: List pull requests for all projects defined in the .config file.
+  - Reads project names from the PROJECTS variable in .config.
+  - Calls `gh-prs` for each project.
+
 ## Contributing New Commands - aka "Recipes"
 
 It's easy to contribute new commands to tn-cli, simply add some commands to the `justfile` and open a Pull Request.
