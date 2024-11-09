@@ -108,3 +108,24 @@ gh-all-prs:
     just --justfile {{justfile()}} gh-prs $project
     echo ""
   done
+
+#
+# Heroku Commands
+#
+heroku-create-staging team pipeline:
+  #!/usr/bin/env bash
+  APP_NAME={{pipeline}}-staging
+  echo "Creating app '$APP_NAME' in team '{{team}}'..."
+  heroku pipelines:create {{pipeline}} --stage=staging --app=$APP_NAME --team={{team}}
+  heroku addons:create heroku-postgresql:essential-0 --app=$APP_NAME
+  heroku config:set ENVIRONMENT="staging" --app=$APP_NAME
+  heroku config:set DEBUG="True" --app=$APP_NAME
+
+heroku-create-production team pipeline:
+  #!/usr/bin/env bash
+  APP_NAME="{{pipeline}}-production"
+  echo "Creating app '$APP_NAME' in team '{{team}}'..."
+  heroku pipelines:create {{pipeline}} --stage=production --app=$APP_NAME --team={{team}}
+  heroku addons:create heroku-postgresql:standard-0 --app=$APP_NAME
+  heroku config:set ENVIRONMENT="production" --app=$APP_NAME
+  heroku config:set DEBUG="False" --app=$APP_NAME
