@@ -143,7 +143,7 @@ heroku-set-env-vars env_file='' app_name='':
   #
   function set_env() {
       echo "Setting env vars from $env_file..."
-      [ -f "$env_file" ] && grep -vE '^(\s*$|#|DB_|REDIS_)' "$env_file" | tr '\n' ' ' | xargs heroku config:set -a $app_name || echo "Env file $env_file is not present, unable to set vars."
+      [ -f "$env_file" ] && grep -vE '^(\s*$|#|DB_|REDIS_|ENVIRONMENT)' "$env_file" | tr '\n' ' ' | xargs heroku config:set -a $app_name || echo "Env file $env_file is not present, unable to set vars."
   }
 
   if [ -z "{{env_file}}" ]; then
