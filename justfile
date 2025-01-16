@@ -108,3 +108,35 @@ gh-all-prs:
     just --justfile {{justfile()}} gh-prs $project
     echo ""
   done
+
+  # Ollama CLI
+#
+[group('ollama')]
+ollama-install:
+  #!/usr/bin/env bash
+  if ! command -v ollama &> /dev/null; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      echo "Installing Ollama CLI..."
+      brew install ollama
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+      type -p curl >/dev/null || sudo apt install curl -y
+      curl -fsSL https://ollama.com/install.sh | sh
+    else
+      echo "Unsupported operating system. Please install GitHub CLI manually."
+      exit 1
+    fi
+  fi
+
+[group('ollama')]
+ollama-serve:
+  ollama serve 
+ollama-gen:
+  ollama generate
+ollama-codegen:
+  ollama 
+ollama-customgen:
+  ollama
+
+
+
+
