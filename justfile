@@ -146,3 +146,70 @@ gh-all-prs:
     just --justfile {{justfile()}} gh-prs $project
     echo ""
   done
+
+#
+# Heroku Commands
+#
+heroku-create-staging team pipeline:
+  #!/usr/bin/env bash
+  APP_NAME={{pipeline}}-staging
+  echo "Creating app '$APP_NAME' in team '{{team}}'..."
+  heroku pipelines:create {{pipeline}} --stage=staging --app=$APP_NAME --team={{team}}
+  heroku addons:create heroku-postgresql:essential-0 --app=$APP_NAME
+  heroku config:set ENVIRONMENT="staging" --app=$APP_NAME
+  heroku config:set DEBUG="True" --app=$APP_NAME
+
+heroku-create-production team pipeline:
+  #!/usr/bin/env bash
+  APP_NAME="{{pipeline}}-production"
+  echo "Creating app '$APP_NAME' in team '{{team}}'..."
+  heroku pipelines:create {{pipeline}} --stage=production --app=$APP_NAME --team={{team}}
+  heroku addons:create heroku-postgresql:standard-0 --app=$APP_NAME
+  heroku config:set ENVIRONMENT="production" --app=$APP_NAME
+  heroku config:set DEBUG="False" --app=$APP_NAME
+
+heroku-set-env-vars env_file='' app_name='':
+  #!/usr/bin/env bash
+
+  #
+  # Collects variables from a .env file and deploys.
+  #
+  # NOTES:
+  #  - This will overwrite existing variables! Confirm the correct variables are available.
+  #  - Because DB info is provisioned by Heroku, this script will ask the user if they 
+  #    want to purposefully include DB-related env vars.
+  #
+  function set_env() {
+      echo "Setting env vars from $env_file..."
+      [ -f "$env_file" ] && grep -vE '^(\s*$|#|DB_|REDIS_|ENVIRONMENT)' "$env_file" | tr '\n' ' ' | xargs heroku config:set -a $app_name || echo "Env file $env_file is not present, unable to set vars."
+  }
+
+  if [ -z "{{env_file}}" ]; then
+    printf "Provide the full path to a .env file, ex: ~/my-project/.env.example\n"
+    read env_file
+    env_file=$(eval echo "$env_file")
+  else
+    env_file="{{env_file}}"
+  fi
+
+  if [ -z "{{app_name}}" ]; then
+    printf "\n"
+    printf "Enter app name\n"
+    read app_name
+  else
+    app_name="{{app_name}}"
+  fi
+
+  printf "\n"
+  echo "Heroku will auto-provision db/redis env vars when a db/redis is provisioned, by default this script will ignore the db env vars"
+
+  printf "\n"
+  echo "This will replace values and variables in ${env_file} on the environment ${app_name} continue?"
+  select yn in "Yes" "No"; do
+      case $yn in
+      Yes) set_env && break || return 1 ;;
+      No) break ;;
+      esac
+  done
+
+  echo "Done setting env vars."
