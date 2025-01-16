@@ -103,7 +103,7 @@ gh-prs repo='tn-spa-bootstrapper':
 [group('github')]
 gh-all-prs:
   #!/usr/bin/env bash
-  IFS=',' read -ra projects <<< "$(cat .config | grep PROJECTS | cut -d'=' -f2)"
+  IFS=',' read -ra projects <<< "$(cat ./tncli-configs/.config | grep PROJECTS | cut -d'=' -f2)"
   for project in "${projects[@]}"; do
     just --justfile {{justfile()}} gh-prs $project
     echo ""
