@@ -146,3 +146,20 @@ gh-all-prs:
     just --justfile {{justfile()}} gh-prs $project
     echo ""
   done
+
+# repo should be like: `owner/repo_name`
+[group('github')]
+gh-transfer repo new_owner:
+  #!/usr/bin/env bash
+  gh api \
+    --method POST \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    /repos/{{repo}}/transfer \
+    -f "new_owner={{new_owner}}"
+
+# repo should be like: `owner/repo_name`
+[group('github')]
+gh-archive repo:
+  #!/usr/bin/env bash
+  gh repo archive {{repo}} --yes
