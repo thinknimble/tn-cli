@@ -54,14 +54,14 @@ install-bun:
   fi
 
 [group('tn-models')]
-make-tn-models project_url api_key endpoint='/api/users/':
+make-tn-models project_url api_key endpoint='/api/users/' output="someoutput.js":
   #!/usr/bin/env bash
   if ! command -v bunx &> /dev/null
   then
     echo "Please run 'tn install-bun' to install bunx first."
     exit 1
   fi
-  bunx @thinknimble/tnm-cli read '{{project_url}}/api/schema/?format=yaml' -t '{{api_key}}' -u '{{endpoint}}'
+  bunx @thinknimble/tnm-cli read '{{project_url}}/api/schema/?format=yaml' -t '{{api_key}}' -u '{{endpoint}}' -o '{{output}}'
 
 #
 # GitHub CLI
@@ -98,16 +98,71 @@ gh-prs repo='tn-spa-bootstrapper':
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
     /repos/thinknimble/{{repo}}/pulls | \
-  jq -r '.[] | "- \(.title) (\(.html_url))"'
+    jq -r '.[] | "\(.title)\t\(.html_url)"' | \
+    while IFS=$'\t' read -r title url updated_at; do
+
+    pr_number=$(basename "$url" | grep -o '[0-9]*$')
+    commits=$(gh api /repos/thinknimble/{{repo}}/pulls/$pr_number/commits)
+
+    # Get the number of commits in the pull request
+    commit_count=$(echo "$commits" | jq '. | length')
+
+    # Get the last commit date
+    latest_commit=$(echo "$commits" | jq -r '.[-1].commit.author.date')
+
+    # Calculate the time since the last update
+    updated_at_unix=$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$latest_commit" +%s)
+    current_time_unix=$(date +%s)
+    time_since_last_update=$((current_time_unix - updated_at_unix))
+    
+    time_message=
+    
+    if [ "$time_since_last_update" -lt 3600 ]; then 
+        # Less than 1 hour, print in minutes
+        time_in_minutes=$((time_since_last_update / 60))
+        time_message=$(echo "$time_in_minutes minutes")
+    elif [ "$time_since_last_update" -lt 86400 ]; then
+        # Less than 24 hours, print in hours
+        time_in_hours=$((time_since_last_update / 3600))
+        time_message=$(echo "$time_in_hours hours")
+    elif [ "$time_since_last_update" -lt 604800 ]; then
+        # More than 24 hours but less than a week, print in days
+        time_in_days=$((time_since_last_update / 86400))
+        time_message=$(echo "$time_in_days days")
+    else
+        # More than a week, print in weeks
+        time_in_weeks=$((time_since_last_update / 604800))
+        time_message=$(echo "$time_in_weeks weeks")
+    fi
+    
+    echo "$title    $url    $commit_count commits  $time_message"
+  done
 
 [group('github')]
 gh-all-prs:
   #!/usr/bin/env bash
-  IFS=',' read -ra projects <<< "$(cat .config | grep PROJECTS | cut -d'=' -f2)"
+  IFS=',' read -ra projects <<< "$(cat ./.tn/.config | grep PROJECTS | cut -d'=' -f2)"
   for project in "${projects[@]}"; do
     just --justfile {{justfile()}} gh-prs $project
     echo ""
   done
+
+# repo should be like: `owner/repo_name`
+[group('github')]
+gh-transfer repo new_owner:
+  #!/usr/bin/env bash
+  gh api \
+    --method POST \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    /repos/{{repo}}/transfer \
+    -f "new_owner={{new_owner}}"
+
+# repo should be like: `owner/repo_name`
+[group('github')]
+gh-archive repo:
+  #!/usr/bin/env bash
+  gh repo archive {{repo}} --yes
 
 #
 # Heroku Commands

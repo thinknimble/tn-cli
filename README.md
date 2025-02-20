@@ -69,8 +69,9 @@ You can view source code for available commands in the [justfile](justfile).
 
 - `tn install-bun`: Install the Bun runtime if not already installed.
 
-- `tn make-tn-models <project_url> <api_key> [endpoint]`: Generate TN models using the @thinknimble/tnm-cli tool.
+- `tn make-tn-models <project_url> <api_key> [endpoint] [output]`: Generate TN models using the @thinknimble/tnm-cli tool.
   - Default endpoint: '/api/users/'
+  - Output should be a javascript or typescript file
   - Requires Bun to be installed
 
 Note: For AWS helpers, the AWS CLI is required for these commands to work.
