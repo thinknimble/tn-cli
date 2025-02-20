@@ -112,23 +112,70 @@ gh-all-prs:
 #
 # Heroku Commands
 #
-heroku-create-staging team pipeline:
+[group('heroku')]
+heroku-create-pipeline app_name team:
   #!/usr/bin/env bash
-  APP_NAME={{pipeline}}-staging
-  echo "Creating app '$APP_NAME' in team '{{team}}'..."
-  heroku pipelines:create {{pipeline}} --stage=staging --app=$APP_NAME --team={{team}}
-  heroku addons:create heroku-postgresql:essential-0 --app=$APP_NAME
-  heroku config:set ENVIRONMENT="staging" --app=$APP_NAME
-  heroku config:set DEBUG="True" --app=$APP_NAME
 
-heroku-create-production team pipeline:
-  #!/usr/bin/env bash
-  APP_NAME="{{pipeline}}-production"
-  echo "Creating app '$APP_NAME' in team '{{team}}'..."
-  heroku pipelines:create {{pipeline}} --stage=production --app=$APP_NAME --team={{team}}
-  heroku addons:create heroku-postgresql:standard-0 --app=$APP_NAME
-  heroku config:set ENVIRONMENT="production" --app=$APP_NAME
-  heroku config:set DEBUG="False" --app=$APP_NAME
+  PIPELINE={{app_name}}
+  STAGING={{app_name}}-staging
+  PRODUCTION={{app_name}}-production
+  TEAM={{team}}
+
+  for APP_NAME in $STAGING $PRODUCTION; do
+    heroku apps:create $APP_NAME --no-remote --buildpack=heroku/python --team=$TEAM
+    heroku buildpacks:add --index 1 heroku/nodejs --app=$APP_NAME
+
+    # Required env vars
+    heroku config:set SECRET_KEY="$(openssl rand -base64 64)" --app=$APP_NAME
+    # TODO: ALLOWS_HOSTS will be incorrect right now b/c Heroku adds random characters to the domain
+    heroku config:set CURRENT_DOMAIN="$APP_NAME.herokuapp.com" --app=$APP_NAME
+    heroku config:set ALLOWED_HOSTS="$APP_NAME.herokuapp.com" --app=$APP_NAME
+    # END TODO
+    heroku config:set NPM_CONFIG_PRODUCTION=false --app=$APP_NAME
+    heroku config:set MAILGUN_API_KEY="SET ME" --app=$APP_NAME
+    heroku config:set MAILGUN_DOMAIN="SET ME" --app=$APP_NAME
+    heroku config:set DJANGO_SUPERUSER_PASSWORD="TN_$APP_NAME" --app=$APP_NAME
+    heroku config:set CYPRESS_TEST_USER_PASS="TN_$APP_NAME" --app=$APP_NAME
+    heroku config:set DEBUG="True" --app=$APP_NAME
+  done
+
+  # Create a pipeline using production
+  heroku pipelines:create $PIPELINE --stage=production --app=$PRODUCTION --team=$TEAM
+
+  # Production-specific settings
+  heroku addons:create heroku-postgresql:standard-0 --app=$PRODUCTION
+  heroku config:set ENVIRONMENT="production" --app=$PRODUCTION
+  heroku config:set DEBUG="True" --app=$PRODCUTION
+
+  # Add Staging to that pipeline
+  heroku pipelines:add $PIPELINE --stage=staging --app=$STAGING
+
+  # Staging specific settings
+  heroku addons:create heroku-postgresql:essential-0 --app=$STAGING
+  heroku config:set ENVIRONMENT="staging" --app=$STAGING
+
+  # TODO - Turn on auto-deploys
+  printf "Your new pipeline is ready: https://dashboard.heroku.com/pipelines/${PIPELINE}\n"
+  printf "Please turn on auto-deploys for the pipeline.\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  # TODO - Deploy once manually
+  printf "Next, deploy the staging app once manually.\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  # Connect Github
+  # TODO - Does not work. Also a lot of review app settings have to be set manually anyway
+  # heroku pipelines:connect $PIPELINE -r thinknimble/$PIPELINE
+  printf "Next, connect the pipeline to Github.\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  # After Github is connected...
+  # heroku reviewapps:enable --pipeline="${PIPELINE}"
+  # TODO - create automatically
+  # TODO - deterministic URLs
+  # TODO - set private env vars
+  printf "Next, to enable review apps visit the pipeline settings:\n"
+  printf "Make sure to change the review app PR name\n"
 
 heroku-set-env-vars env_file='' app_name='':
   #!/usr/bin/env bash

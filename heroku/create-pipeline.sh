@@ -51,7 +51,7 @@ heroku config:set ENVIRONMENT="staging" --app=$STAGING
 # TODO - Deploy once manually
 
 # Connect Github
-# TODO - Deosn't work. Also a lot of review app settings have to be set manually anyway
+# TODO - Doesn't work. Also a lot of review app settings have to be set manually anyway
 # heroku pipelines:connect $PIPELINE -r thinknimble/$PIPELINE
 
 # After Github is connected...
