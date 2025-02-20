@@ -242,7 +242,7 @@ heroku-create-pipeline app_name team:
   printf "Open that link and navigate to the 'Settings' tab to connect your new pipeline to Github.\n"
   read -p "Press enter when you are ready to proceed..."
 
-  # TODO - enable review apps
+  # TODO - Automate enabling review apps
   # NOTE: This is not working yet: heroku reviewapps:enable --pipeline="${PIPELINE}"
   printf "\n\nNEXT: ENABLE REVIEW APPS\n"
   printf "Find the review apps section and enable review apps:\n"
@@ -250,17 +250,24 @@ heroku-create-pipeline app_name team:
   printf "  Select: 'Destroy stale review apps automatically'\n"
   read -p "Press enter when you are ready to proceed..."
 
+  # TODO - Automate updating the review app URL pattern
   printf "\n\nNEXT: UPDATE REVIEW APP URL PATTERN\n"
   printf "After enabling review apps, click 'Update URL Pattern' and set it to: Predictable\n"
   read -p "Press enter when you are ready to proceed..."
 
-  # TODO - Turn on auto-deploys
+  # TODO - Automate turning on auto-deploys
   printf "\n\nNEXT: TURN ON AUTO-DEPLOYMENT FOR STAGING\n"
   printf "Visit the staging app in your pipeline, navigate to the 'Deploy' tab, "
   printf "find the 'Automatic deploys' section and click 'Enable automatic deploys from GitHub'.\n"
   read -p "Press enter when you are ready to proceed..."
 
-  # TODO - Deploy once manually
+  # TODO - Automate fixing the ALLOWED_HOSTS variable
+  printf "\n\nNEXT: FIX ALLOWED_HOSTS env var\n"
+  printf "By default, Heroku will add random characters to the domain name, so you need to update the ALLOWED_HOSTS env var.\n"
+  printf "Navigate to the 'Settings' tab of the staging and production apps and update the ALLOWED_HOSTS env var to match the domain.\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  # TODO - Automate the first deployment
   printf "\n\nFINALLY: DEPLOY STAGING\n"
   printf "Finally, look for the 'Manual deploy' section and click 'Deploy Branch' "
   printf "To deploy the main branch to the staging app one time manually.\n"
