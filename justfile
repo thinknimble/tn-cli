@@ -16,7 +16,12 @@ install-uv:
 #
 [group('tn-cli')]
 update:
-  git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
+  #!/usr/bin/env bash
+  if [ -d ~/.tn/cli ]; then
+    git -C ~/.tn/cli pull
+  else
+    git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
+  fi
 
 #
 # Bootstrap new projects
