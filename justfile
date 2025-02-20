@@ -193,7 +193,7 @@ gh-archive repo:
 # Heroku Commands
 #
 [group('heroku')]
-heroku-create-pipeline app_name team:
+heroku-create-pipeline app_name team='thinknimble-agency-pod':
   #!/usr/bin/env bash
 
   PIPELINE={{app_name}}
@@ -262,7 +262,7 @@ heroku-create-pipeline app_name team:
   read -p "Press enter when you are ready to proceed..."
 
   # TODO - Automate fixing the ALLOWED_HOSTS variable
-  printf "\n\nNEXT: FIX ALLOWED_HOSTS env var\n"
+  printf "\n\nNEXT: FIX ALLOWED_HOSTS ENVIRONMENT VARIABLE\n"
   printf "By default, Heroku will add random characters to the domain name, so you need to update the ALLOWED_HOSTS env var.\n"
   printf "Navigate to the 'Settings' tab of the staging and production apps and update the ALLOWED_HOSTS env var to match the domain.\n"
   read -p "Press enter when you are ready to proceed..."
@@ -351,7 +351,7 @@ heroku-delete-pipeline pipeline force='false':
             echo "Destroying app: $app"
             heroku apps:destroy --app=$app --confirm=$app
         done
-        heroku pipelines:destroy {{pipeline}}
+        # heroku pipelines:destroy {{pipeline}}
     else
         echo "⚠️  WARNING: This will permanently delete the pipeline '{{pipeline}}' and these apps:"
         echo "$APPS"
@@ -362,7 +362,7 @@ heroku-delete-pipeline pipeline force='false':
                 echo "Destroying app: $app"
                 heroku apps:destroy --app=$app --confirm=$app
             done
-            heroku pipelines:destroy {{pipeline}}
+            # heroku pipelines:destroy {{pipeline}}
         else
             echo "Aborted."
         fi
