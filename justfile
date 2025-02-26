@@ -327,6 +327,16 @@ heroku-set-env-vars env_file='' app_name='':
 
   echo "Done setting env vars."
 
+# Create a new Heroku app. Does not add buildpacks!
+[group('heroku')]
+heroku-create-app app_name team='thinknimble-agency-pod' pipeline='' stage='staging':
+    #!/usr/bin/env bash
+    heroku apps:create {{app_name}} --no-remote --team={{team}}
+
+    if [ -n "{{pipeline}}" ]; then
+      heroku pipelines:add {{pipeline}} --app={{app_name}} --stage={{stage}}
+    fi
+
 # Delete a specific Heroku app
 [group('heroku')]
 heroku-delete-app app_name force='false':
