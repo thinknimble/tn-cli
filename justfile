@@ -48,8 +48,15 @@ new-project:
   printf "    git remote add origin git@github.com:thinknimble/<project_name>.git\n"
   printf "    git branch -M main\n"
   printf "    git push -u origin main\n\n"
+  read -p "Press enter when you are ready to proceed..."
 
-  printf "After that, create a new app pipeline with tn heroku-create-pipeline <project_name> <team>\n"
+  printf "Next, you need to add two secrets to your GitHub repository:\n"
+  printf "    - SECRET_KEY\n"
+  printf "    - PLAYWRIGHT_TEST_USER_PASS\n\n"
+  printf "These secrets are found in the .env.example file.\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  printf "Finally, create a Heroku pipeline for your app with: tn heroku-create-pipeline <project_name> <team>\n"
 
 #
 # AWS Helpers
