@@ -50,13 +50,34 @@ new-project:
   printf "    git push -u origin main\n\n"
   read -p "Press enter when you are ready to proceed..."
 
-  printf "Next, you need to add two secrets to your GitHub repository:\n"
-  printf "    - SECRET_KEY\n"
-  printf "    - PLAYWRIGHT_TEST_USER_PASS\n\n"
-  printf "These secrets are found in the .env.example file.\n"
+  printf "\n\nNext, go to Settings > General in your GitHub repository:\n"
+  printf "    - Under Pull Requests: check only 'Allow Squash merging' and set the default commit message to "
+  printf "'Pull request title and description'.\n"
+  printf "    - Check 'Automatically delete head branches'.\n\n"
   read -p "Press enter when you are ready to proceed..."
 
-  printf "Finally, create a Heroku pipeline for your app with: tn heroku-create-pipeline <project_name> <team>\n"
+  printf "\n\nNext, go to Settings > Branches in your GitHub repository:\n"
+  printf "    - Under 'Branch protection rules', click 'Add branch ruleset'.\n"
+  printf "    - Set Ruleset Name to 'default'.\n"
+  printf "    - Under Targets: click 'Add target' and select 'include default branch'.\n"
+  printf "    - Check 'Restrict deletions'.\n"
+  printf "    - Check 'Require linear history'.\n"
+  printf "    - Check 'Require a pull request before merging:'\n"
+  printf "        - Require 1 or more approvals.\n"
+  printf "        - Check Dismiss stale pull request approvals when new commits are pushed.\n"
+  printf "        - Check Require conversation resolution before merging.\n"
+  printf "        - ONLY allow 'Squash' as the merge method.\n"
+  printf "    - Check 'Block force pushes'.\n"
+  printf "    - Click the 'Create' button at the bottom.\n\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  printf "\n\nNext, in Settings > Secrets and variables > Repository secrets, add these:\n"
+  printf "    - SECRET_KEY\n"
+  printf "    - PLAYWRIGHT_TEST_USER_PASS\n"
+  printf "These secrets are found in the .env.example file.\n\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  printf "\n\nFinally, create a Heroku pipeline for your app with: tn heroku-create-pipeline <project_name> <team>\n"
 
 #
 # AWS Helpers
