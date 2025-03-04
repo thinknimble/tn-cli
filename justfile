@@ -227,8 +227,8 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
     heroku config:set NPM_CONFIG_PRODUCTION=false --app=$APP_NAME
     heroku config:set MAILGUN_API_KEY="SET ME" --app=$APP_NAME
     heroku config:set MAILGUN_DOMAIN="SET ME" --app=$APP_NAME
-    heroku config:set DJANGO_SUPERUSER_PASSWORD="TN_$APP_NAME" --app=$APP_NAME
-    heroku config:set PLAYWRIGHT_TEST_USER_PASS="TN_$APP_NAME" --app=$APP_NAME
+    heroku config:set DJANGO_SUPERUSER_PASSWORD="TN_$PIPELINE" --app=$APP_NAME
+    heroku config:set PLAYWRIGHT_TEST_USER_PASS="TN_$PIPELINE" --app=$APP_NAME
     heroku config:set DEBUG="True" --app=$APP_NAME
   done
 
