@@ -237,6 +237,7 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
 
   # Production-specific settings
   heroku addons:create heroku-postgresql:standard-0 --app=$PRODUCTION
+  heroku addons:create heroku-redis:mini --app=$PRODUCTION
   heroku config:set ENVIRONMENT="production" --app=$PRODUCTION
   heroku config:set DEBUG="True" --app=$PRODUCTION
 
@@ -245,6 +246,7 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
 
   # Staging specific settings
   heroku addons:create heroku-postgresql:essential-0 --app=$STAGING
+  heroku addons:create heroku-redis:mini --app=$STAGING
   heroku config:set ENVIRONMENT="staging" --app=$STAGING
 
   # Connect Github
