@@ -214,8 +214,9 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
   TEAM={{team}}
 
   for APP_NAME in $STAGING $PRODUCTION; do
-    heroku apps:create $APP_NAME --no-remote --buildpack=heroku/python --team=$TEAM
-    heroku buildpacks:add --index 1 heroku/nodejs --app=$APP_NAME
+    heroku apps:create $APP_NAME --no-remote --buildpack=heroku/nodejs --team=$TEAM
+    heroku buildpacks:add https://github.com/dropseed/heroku-buildpack-uv.git --app=$APP_NAME
+    heroku buildpacks:add heroku/python --app=$APP_NAME
 
     # Required env vars
     heroku config:set SECRET_KEY="$(openssl rand -base64 64)" --app=$APP_NAME
