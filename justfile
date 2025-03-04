@@ -50,13 +50,34 @@ new-project:
   printf "    git push -u origin main\n\n"
   read -p "Press enter when you are ready to proceed..."
 
-  printf "Next, you need to add two secrets to your GitHub repository:\n"
-  printf "    - SECRET_KEY\n"
-  printf "    - PLAYWRIGHT_TEST_USER_PASS\n\n"
-  printf "These secrets are found in the .env.example file.\n"
+  printf "\n\nNext, go to Settings > General in your GitHub repository:\n"
+  printf "    - Under Pull Requests: check only 'Allow Squash merging' and set the default commit message to "
+  printf "'Pull request title and description'.\n"
+  printf "    - Check 'Automatically delete head branches'.\n\n"
   read -p "Press enter when you are ready to proceed..."
 
-  printf "Finally, create a Heroku pipeline for your app with: tn heroku-create-pipeline <project_name> <team>\n"
+  printf "\n\nNext, go to Settings > Branches in your GitHub repository:\n"
+  printf "    - Under 'Branch protection rules', click 'Add branch ruleset'.\n"
+  printf "    - Set Ruleset Name to 'default'.\n"
+  printf "    - Under Targets: click 'Add target' and select 'include default branch'.\n"
+  printf "    - Check 'Restrict deletions'.\n"
+  printf "    - Check 'Require linear history'.\n"
+  printf "    - Check 'Require a pull request before merging:'\n"
+  printf "        - Require 1 or more approvals.\n"
+  printf "        - Check Dismiss stale pull request approvals when new commits are pushed.\n"
+  printf "        - Check Require conversation resolution before merging.\n"
+  printf "        - ONLY allow 'Squash' as the merge method.\n"
+  printf "    - Check 'Block force pushes'.\n"
+  printf "    - Click the 'Create' button at the bottom.\n\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  printf "\n\nNext, in Settings > Secrets and variables > Repository secrets, add these:\n"
+  printf "    - SECRET_KEY\n"
+  printf "    - PLAYWRIGHT_TEST_USER_PASS\n"
+  printf "These secrets are found in the .env.example file.\n\n"
+  read -p "Press enter when you are ready to proceed..."
+
+  printf "\n\nFinally, create a Heroku pipeline for your app with: tn heroku-create-pipeline <project_name> <team>\n"
 
 #
 # AWS Helpers
@@ -214,8 +235,9 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
   TEAM={{team}}
 
   for APP_NAME in $STAGING $PRODUCTION; do
-    heroku apps:create $APP_NAME --no-remote --buildpack=heroku/python --team=$TEAM
-    heroku buildpacks:add --index 1 heroku/nodejs --app=$APP_NAME
+    heroku apps:create $APP_NAME --no-remote --buildpack=heroku/nodejs --team=$TEAM
+    heroku buildpacks:add https://github.com/dropseed/heroku-buildpack-uv.git --app=$APP_NAME
+    heroku buildpacks:add heroku/python --app=$APP_NAME
 
     # Required env vars
     heroku config:set SECRET_KEY="$(openssl rand -base64 64)" --app=$APP_NAME
@@ -226,8 +248,8 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
     heroku config:set NPM_CONFIG_PRODUCTION=false --app=$APP_NAME
     heroku config:set MAILGUN_API_KEY="SET ME" --app=$APP_NAME
     heroku config:set MAILGUN_DOMAIN="SET ME" --app=$APP_NAME
-    heroku config:set DJANGO_SUPERUSER_PASSWORD="TN_$APP_NAME" --app=$APP_NAME
-    heroku config:set CYPRESS_TEST_USER_PASS="TN_$APP_NAME" --app=$APP_NAME
+    heroku config:set DJANGO_SUPERUSER_PASSWORD="TN_$PIPELINE" --app=$APP_NAME
+    heroku config:set PLAYWRIGHT_TEST_USER_PASS="TN_$PIPELINE" --app=$APP_NAME
     heroku config:set DEBUG="True" --app=$APP_NAME
   done
 
@@ -236,6 +258,7 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
 
   # Production-specific settings
   heroku addons:create heroku-postgresql:standard-0 --app=$PRODUCTION
+  heroku addons:create heroku-redis:mini --app=$PRODUCTION
   heroku config:set ENVIRONMENT="production" --app=$PRODUCTION
   heroku config:set DEBUG="True" --app=$PRODUCTION
 
@@ -244,6 +267,7 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
 
   # Staging specific settings
   heroku addons:create heroku-postgresql:essential-0 --app=$STAGING
+  heroku addons:create heroku-redis:mini --app=$STAGING
   heroku config:set ENVIRONMENT="staging" --app=$STAGING
 
   # Connect Github
