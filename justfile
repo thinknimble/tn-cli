@@ -221,7 +221,7 @@ ollama-install:
       type -p curl >/dev/null || sudo apt install curl -y
       curl -fsSL https://ollama.com/install.sh | sh
     else
-      echo "Unsupported operating system. Please install GitHub CLI manually."
+      echo "Unsupported operating system. Please install OLlama manually."
       exit 1
     fi
   fi
