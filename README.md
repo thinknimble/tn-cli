@@ -33,6 +33,21 @@ Available recipes:
     # etc...
 ```
 
+## Bash and Zsh Tab Completions
+
+The install script above attempts to automatically install Bash and Zsh completions. This will auto-complete commands when you press `Tab`.
+
+While this install seems to work consistently on Mac with Zsh, we have had less luck with bash completions on Linux (Ubuntu). If that is your case and you are not getting tab-completions, try adding the following to your `~/.bashrc`:
+
+```bash
+# TN-CLI
+export TNCLI_DIR="$HOME/.tn/cli"
+alias tn='just -f ~/.tn/cli/justfile -d .'
+[ -s "$TNCLI_DIR/completions/bash-completions/tncli" ] && \. "$TNCLI_DIR/completions/bash-completions/tncli"
+```
+
+Then reload your shell or `source ~/.bashrc`.
+
 ## Commands Reference
 
 You can view source code for available commands in the [justfile](justfile).
@@ -43,6 +58,7 @@ You can view source code for available commands in the [justfile](justfile).
 
 - `tn`: List all available commands.
 - `tn os-info`: Display the system architecture and operating system.
+- `tn install-uv`: Install the uv package manager for Python.
 
 ### TN CLI Management
 
@@ -51,6 +67,8 @@ You can view source code for available commands in the [justfile](justfile).
 ### Project Bootstrapping
 
 - `tn new-project` or `tn bootstrap`: Bootstrap a new project using cookiecutter with the tn-spa-bootstrapper template.
+  - Requires uv to be installed (use `tn install-uv` first)
+  - Provides guidance for next steps (git initialization and Heroku setup)
 
 ### AWS Helpers
 
@@ -60,10 +78,11 @@ You can view source code for available commands in the [justfile](justfile).
   - Default region: 'us-east-1'
 
 - `tn aws-enable-bedrock <project_name> [profile] [region] [model]`: Enable AWS Bedrock for a project using CloudFormation.
-
   - Default profile: 'default'
   - Default region: 'us-east-1'
   - Default model: '\*' (all models)
+
+Note: For AWS helpers, the AWS CLI is required for these commands to work.
 
 ### TN Models Helpers
 
@@ -74,25 +93,52 @@ You can view source code for available commands in the [justfile](justfile).
   - Output should be a javascript or typescript file
   - Requires Bun to be installed
 
-Note: For AWS helpers, the AWS CLI is required for these commands to work.
+## GitHub CLI Commands
 
-### GitHub CLI
-
-- `tn gh-install`: Install the GitHub CLI (gh) if not already present.
+- `tn gh-install`: Install the GitHub CLI (gh).
 
   - Uses Homebrew for macOS and apt for Linux.
   - Displays a message for unsupported operating systems.
 
 - `tn gh-auth`: Initiate GitHub CLI authentication process.
 
+- `tn gh-create-repo <repo> [visibility]`: Create a new repository under the thinknimble organization.
+
+  - Default visibility: private
+  - Example: `tn gh-create-repo my-new-project public`
+
 - `tn gh-prs [repo]`: List pull requests for a specified repository.
 
   - Default repo: 'tn-spa-bootstrapper'
-  - Displays PR titles with links.
+  - Shows PR title, URL, commit count, and time since last update
 
-- `tn gh-all-prs`: List pull requests for all projects defined in the .config file.
-  - Reads project names from the PROJECTS variable in .config.
-  - Calls `gh-prs` for each project.
+- `tn gh-all-prs`: List pull requests for all projects defined in .tn/.config.
+
+- `tn gh-transfer <repo> <new_owner>`: Transfer a repository to a new owner.
+
+- `tn gh-archive <repo>`: Archive a repository.
+
+### Heroku Commands
+
+- `tn heroku-create-pipeline <app_name> [team]`: Create a new Heroku pipeline with staging and production apps.
+
+  - Default team: 'thinknimble-agency-pod'
+  - Sets up buildpacks, databases, and environment variables
+  - Guides through GitHub integration and review apps setup
+
+- `tn heroku-set-env-vars [env_file] [app_name]`: Set environment variables from a .env file.
+
+  - Prompts for file path and app name if not provided
+  - Skips database-related variables
+
+- `tn heroku-delete-app <app_name> [force]`: Delete a specific Heroku app.
+
+  - Use force=true to skip confirmation prompt
+  - Example: `tn heroku-delete-app my-app-staging true`
+
+- `tn heroku-delete-pipeline <pipeline> [force]`: Delete an entire Heroku pipeline and its apps.
+  - Use force=true to skip confirmation prompt
+  - Example: `tn heroku-delete-pipeline my-project true`
 
 ## Contributing New Commands - aka "Recipes"
 
