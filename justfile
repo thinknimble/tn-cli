@@ -205,6 +205,43 @@ gh-all-prs:
     echo ""
   done
 
+  # Ollama CLI
+
+#
+# Ollama CLI
+#
+[group('ollama')]
+ollama-install:
+  #!/usr/bin/env bash
+  if ! command -v ollama &> /dev/null; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      echo "Installing Ollama CLI..."
+      brew install ollama
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+      type -p curl >/dev/null || sudo apt install curl -y
+      curl -fsSL https://ollama.com/install.sh | sh
+    else
+      echo "Unsupported operating system. Please install OLlama manually."
+      exit 1
+    fi
+  fi
+
+[group('ollama')]
+ollama-serve:
+  ollama serve 
+
+[group('ollama')]
+ollama-gen:
+  ollama generate
+
+[group('ollama')]
+ollama-codegen:
+  ollama
+ 
+[group('ollama')]
+ollama-customgen:
+  ollama
+
 # repo should be like: `owner/repo_name`
 [group('github')]
 gh-transfer repo new_owner:
