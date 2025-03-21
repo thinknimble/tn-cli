@@ -10,7 +10,6 @@ os-info:
 [group('general')]
 install-uv:
   curl -LsSf https://astral.sh/uv/install.sh | sh
-
 #
 # Re-clone and reinstall tn-cli
 #
@@ -22,6 +21,50 @@ update:
   else
     git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
   fi
+
+#
+# Set up the config file
+#
+[group('config')]
+init-config:
+  #!/usr/bin/env bash
+  ls -a ~/.tn
+  if [ -d ~/.tn/.config ]; then
+    echo "Config file already exists."
+  else
+    if [ -f ~/.tn/cli/.config.example ]; then
+      echo "Source config file exists: ~/.tn/cli/.config.example"
+      mkdir -p ~/.tn
+      cp ~/.tn/cli/.config.example ~/.tn/.config
+      if [ $? -eq 0 ]; then
+        echo "Config file copied successfully."
+      else
+        echo "Failed to copy config file."
+      fi
+    else
+      echo "Source config file does not exist: ~/.tn/cli/.config.example"
+    fi
+  fi
+#
+# Update the config
+#
+
+[group('config')]
+update-config var_name var_value:
+  #!/usr/bin/env bash
+  if [ ! -d ~/.tn/.config ]; then
+    echo "No config file found. Run 'tn config-init' first."
+  else
+    # read the file, if the variable exists update it otherwise add it
+    if grep -q "^$var_name=" ~/.tn/.config; then
+      sed -i "s/^$var_name=.*/$var_name=$var_value/" ~/.tn/.config
+      echo "Updated $var_name in config file."
+    else
+      echo "$var_name=$var_value" >> ~/.tn/.config
+      echo "Added $var_name to config file."
+    fi
+  fi
+
 
 #
 # Bootstrap new projects
@@ -205,8 +248,6 @@ gh-all-prs:
     echo ""
   done
 
-  # Ollama CLI
-
 #
 # Ollama CLI
 #
@@ -231,16 +272,23 @@ ollama-serve:
   ollama serve 
 
 [group('ollama')]
-ollama-gen:
-  ollama generate
+ollama-pull model:
+  ollama pull {{model}}
 
 [group('ollama')]
-ollama-codegen:
-  ollama
- 
+ollama-run model:
+  ollama run {{model}}
+
+
 [group('ollama')]
-ollama-customgen:
-  ollama
+ollama-codegen message api_url='' model='qwen2.5-coder:7b':
+  #!/usr/bin/env bash
+  echo "Running Ollama codegen... using base model {{model}}"
+  echo "To clear the chat history, type 'clear chat history' and press enter."
+  CLEAN_API_URL=$(echo "{{api_url}}" | sed 's/^--api_url=//')
+  CLEAN_MODEL=$(echo "{{model}}" | sed 's/^--model=//')
+
+  uvx uv run ./llm/ollama_client.py "{{message}}" --api_url="$CLEAN_API_URL" --model="$CLEAN_MODEL"
 
 # repo should be like: `owner/repo_name`
 [group('github')]

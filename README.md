@@ -140,6 +140,22 @@ Note: For AWS helpers, the AWS CLI is required for these commands to work.
   - Use force=true to skip confirmation prompt
   - Example: `tn heroku-delete-pipeline my-project true`
 
+### Ollama as a local LLM
+Use `tn update-config` <arg> <arg> to set a basic config the default for the local ollama is http://localhost:11434. You should be setting 
+
+```
+OLLAMA_API_URL="https://pari-ollama.ngrok.io"
+OLLAMA_MODEL="llama3.3"
+```
+
+- `tn ollama-serve`: serve a local llm server this is needed to run any commands
+- `tn ollama-pull`: When working locally if you want to try a model you have to pull it 
+- `tn ollama-run`: Run an interactive chat with the local ollama server
+- `tn ollama-codegen message`: Use the code gen specific cli (WIP)
+  optional args: `--api_url=""` use a custom url other than the default (eg ngrok)
+                  `--model=""` use a custom model the default is qwen2.5-coder:7b
+
+
 ## Contributing New Commands - aka "Recipes"
 
 It's easy to contribute new commands to tn-cli, simply add some commands to the `justfile` and open a Pull Request.
