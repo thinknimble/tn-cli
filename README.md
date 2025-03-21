@@ -144,7 +144,7 @@ Note: For AWS helpers, the AWS CLI is required for these commands to work.
 Use `tn update-config` <arg> <arg> to set a basic config the default for the local ollama is http://localhost:11434. You should be setting 
 
 ```
-OLLAMA_API_URL="https://pari-ollama.ngrok.io"
+OLLAMA_API_URL="http://localhost:11434"
 OLLAMA_MODEL="llama3.3"
 ```
 
