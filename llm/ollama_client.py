@@ -80,14 +80,14 @@ async def main():
                             output_messages.append(
                                 f'[Request] Starting part {event.index}: {event.part!r}'
                             )
-                            print(event.part.content)
+                            print(event.part.content, end='', flush=True)
                             
                         elif isinstance(event, PartDeltaEvent):
                             if isinstance(event.delta, TextPartDelta):
                                 output_messages.append(
                                     f'[Request] Part {event.index} text delta: {event.delta.content_delta!r}'
                                 )
-                                print(event.delta.content_delta)
+                                print(event.delta.content_delta, end='', flush=True)
                             elif isinstance(event.delta, ToolCallPartDelta):
                                 output_messages.append(
                                     f'[Request] Part {event.index} args_delta={event.delta.args_delta}'
