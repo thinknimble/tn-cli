@@ -205,7 +205,19 @@ gh-all-prs:
     echo ""
   done
 
-  # Ollama CLI
+# Build appstore builds for repo
+[group('github')]
+gh-store-workflow repo include-prefix='true':
+  #!/usr/bin/env bash
+  REPOSITORY={{repo}}
+  if [ {{include-prefix}} = "true" ]; then
+    REPOSITORY=thinknimble/{{repo}}
+  fi
+  echo "Storing workflows for $REPOSITORY..."
+  echo {{include-prefix}}
+  gh workflow run expo-teststore-build-ios.yml --repo $REPOSITORY && gh workflow run expo-teststore-build-android.yml --repo $REPOSITORY
+
+
 
 #
 # Ollama CLI
@@ -450,3 +462,9 @@ heroku-delete-pipeline pipeline force='false':
             echo "Aborted."
         fi
     fi
+
+
+[group('heroku')]
+heroku-promote2prod source to:
+    #!/usr/bin/env bash
+    heroku pipelines:promote -a {{source}} --to {{to}}
