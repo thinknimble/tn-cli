@@ -118,6 +118,11 @@ Note: For AWS helpers, the AWS CLI is required for these commands to work.
 
 - `tn gh-archive <repo>`: Archive a repository.
 
+- `tn gh-store-workflow repo include-prefix=true`: run the gh action for a repo to build google and testflight
+  - if this is a TN repo you can exclude the repo owner it will be appended automatically
+  - Otherwise provide the repo owner/org some-org/some-repo without the git part
+
+
 ### Heroku Commands
 
 - `tn heroku-create-pipeline <app_name> [team]`: Create a new Heroku pipeline with staging and production apps.
@@ -139,6 +144,10 @@ Note: For AWS helpers, the AWS CLI is required for these commands to work.
 - `tn heroku-delete-pipeline <pipeline> [force]`: Delete an entire Heroku pipeline and its apps.
   - Use force=true to skip confirmation prompt
   - Example: `tn heroku-delete-pipeline my-project true`
+
+- `tn heroku-promote2prod source to`: Promote an app from staging to prod using source (staging app) to (prod app)
+  - Example: `tn heroku-promote2prod some-staging some-production` you can also add multiple apps separated by a comma
+
 
 ## Contributing New Commands - aka "Recipes"
 
