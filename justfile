@@ -285,7 +285,6 @@ heroku-create-pipeline app_name team='thinknimble-agency-pod':
 
   for APP_NAME in $STAGING $PRODUCTION; do
     heroku apps:create $APP_NAME --no-remote --buildpack=heroku/nodejs --team=$TEAM
-    heroku buildpacks:add https://github.com/dropseed/heroku-buildpack-uv.git --app=$APP_NAME
     heroku buildpacks:add heroku/python --app=$APP_NAME
 
     # Required env vars
