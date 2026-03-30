@@ -141,6 +141,28 @@ command-name param1 optional_param='default':
     # Your command implementation here
 ```
 
+## 🚢 Deployment
+
+The install script at `https://nimbl.sh/install` is served via GitHub Pages.
+
+- **Domain:** `nimbl.sh` points to GitHub Pages via A records (`192.30.252.153`, `192.30.252.154`)
+- **Source:** GitHub Pages serves from the root of the `gh-pages` branch
+- **Important:** `gh-pages` is **not** automatically updated when `main` changes. The `install` file must be manually kept in sync.
+
+### Updating the install script
+
+After merging changes to `install` on `main`, update `gh-pages`:
+
+```bash
+git checkout gh-pages
+git checkout main -- install
+git commit -m "Sync install script from main"
+git push origin gh-pages
+git checkout main
+```
+
+GitHub Pages will rebuild within a minute or two and the updated script will be live at `https://nimbl.sh/install`.
+
 ## 📄 License
 
 By contributing to TN CLI, you agree that your contributions will be licensed under the Apache License 2.0.
