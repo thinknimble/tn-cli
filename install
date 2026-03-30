@@ -66,11 +66,15 @@ if [[ "$OS_TYPE" == "Darwin" ]]; then
 fi
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    # Check if it's Ubuntu
+    # Detect distro
     if grep -q "Ubuntu" /etc/os-release; then
         echo "Ubuntu Detected"
+        DISTRO="ubuntu"
+    elif grep -qi "arch" /etc/os-release; then
+        echo "Arch Linux Detected"
+        DISTRO="arch"
     else
-        echo "Linux Detected, but not Ubuntu - sorry, we don't support this OS yet."
+        echo "Linux Detected, but not Ubuntu or Arch - sorry, we don't support this OS yet."
         exit 1
     fi
 
@@ -78,8 +82,12 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     echo "Checking if git is installed..."
     if ! command -v git &> /dev/null; then
         echo "git is not installed. Installing git..."
-        sudo apt update
-        sudo apt install git
+        if [[ "$DISTRO" == "ubuntu" ]]; then
+            sudo apt update
+            sudo apt install git
+        elif [[ "$DISTRO" == "arch" ]]; then
+            sudo pacman -Sy --noconfirm git
+        fi
     else
         echo "git is already installed."
     fi
@@ -88,10 +96,14 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     echo "Checking if just is installed..."
     if ! command -v just &> /dev/null; then
         echo "just is not installed. Installing just..."
-        wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' | gpg --dearmor | sudo tee /usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg 1> /dev/null
-        echo "deb [arch=all,$(dpkg --print-architecture) signed-by=/usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg] https://proget.makedeb.org prebuilt-mpr $(lsb_release -cs)" | sudo tee /etc/apt/sources.list.d/prebuilt-mpr.list
-        sudo apt update
-        sudo apt install just
+        if [[ "$DISTRO" == "ubuntu" ]]; then
+            wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' | gpg --dearmor | sudo tee /usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg 1> /dev/null
+            echo "deb [arch=all,$(dpkg --print-architecture) signed-by=/usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg] https://proget.makedeb.org prebuilt-mpr $(lsb_release -cs)" | sudo tee /etc/apt/sources.list.d/prebuilt-mpr.list
+            sudo apt update
+            sudo apt install just
+        elif [[ "$DISTRO" == "arch" ]]; then
+            sudo pacman -Sy --noconfirm just
+        fi
     else
         echo "just already installed."
     fi
@@ -106,21 +118,35 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         git clone git@github.com:thinknimble/tn-cli.git ~/.tn/cli
     fi
 
-    # Add bash alias
-    BASH_ALIAS="alias tn='just -f ~/.tn/cli/justfile -d .'"
-    echo "Checking if BASH_ALIAS is added to ~/.bashrc..."
-    if ! grep -q "$BASH_ALIAS" ~/.bashrc; then
-        echo "Adding BASH_ALIAS to ~/.bashrc..."
-        echo '' >> ~/.bashrc
-        echo '# Load ZSH Completions for TN CLI' >> ~/.bashrc
-        echo "$BASH_ALIAS" >> ~/.bashrc
+    # Set up alias and completions based on the user's shell
+    TN_ALIAS="alias tn='just -f ~/.tn/cli/justfile -d .'"
+    if [[ "$SHELL" == */zsh ]]; then
+        RC_FILE=~/.zshrc
+        ZSH_COMPLETIONS="source ~/.tn/cli/completions/zsh-completions/tncli"
+        echo "Checking if tn alias is added to $RC_FILE..."
+        if ! grep -q "$TN_ALIAS" "$RC_FILE"; then
+            echo "Adding tn alias and completions to $RC_FILE..."
+            echo '' >> "$RC_FILE"
+            echo '# TN CLI' >> "$RC_FILE"
+            echo "$TN_ALIAS" >> "$RC_FILE"
+            echo "$ZSH_COMPLETIONS" >> "$RC_FILE"
+        else
+            echo "tn-cli alias already added to $RC_FILE."
+        fi
     else
-        echo "tn-cli alias already added to ~/.bashrc."
+        RC_FILE=~/.bashrc
+        echo "Checking if tn alias is added to $RC_FILE..."
+        if ! grep -q "$TN_ALIAS" "$RC_FILE"; then
+            echo "Adding tn alias to $RC_FILE..."
+            echo '' >> "$RC_FILE"
+            echo '# TN CLI' >> "$RC_FILE"
+            echo "$TN_ALIAS" >> "$RC_FILE"
+        else
+            echo "tn-cli alias already added to $RC_FILE."
+        fi
+        mkdir -p ~/.local/share/bash-completion/completions
+        cp ~/.tn/cli/completions/bash-completions/tncli ~/.local/share/bash-completion/completions/tn
     fi
-
-    # Install completions for bash
-    mkdir -p ~/.local/share/bash-completion/completions
-    cp ~/.tn/cli/completions/bash-completions/tncli ~/.local/share/bash-completion/completions/tn
 
     echo
     echo -e "\033[32mSUCCESS!\033[0m"
