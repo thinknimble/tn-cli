@@ -5,6 +5,8 @@ created: 2026-07-20T23:00:00Z
 priority: 1
 status: not_started
 depends-on: cli-script-recipes
+branch: feature/aws-pipeline
+
 ---
 
 # Recipe Group: All 7 Recipes Appear Under `[aws-terraform]` in `tn --list`
