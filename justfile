@@ -572,7 +572,9 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
   # 2. Create or update IAM Role (idempotent)
   echo ""
   echo "Processing IAM Role: $ROLE_NAME"
-  REPO_CONDITION="repo:${REPO}:*"
+  # GitHub OIDC sub claims now include numeric IDs: org@ID/repo@ID
+  # Use wildcards after org and repo names to match both old and new formats
+  REPO_CONDITION="repo:${GITHUB_ORG}*/${SERVICE}*:*"
   if run_aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
     echo "Role $ROLE_NAME already exists"
     # Check if this specific repo already in trust policy
