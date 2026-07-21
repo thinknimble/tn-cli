@@ -757,7 +757,7 @@ aws-setup-secrets service environment profile='default' region='us-east-1':
   fi
 
   # Create/update bucket policy for OIDC role access (idempotent)
-  ROLE_NAME="github-actions-${ENVIRONMENT}"
+  ROLE_NAME="github-actions-${SERVICE}-${ENVIRONMENT}"
   ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}"
 
   echo ""
