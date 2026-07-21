@@ -1,6 +1,6 @@
 [private]
 default:
-  just -f ~/.tn/cli/justfile --list
+  just -f ~/.tn/cli/justfile --list --unsorted
 
 [group('general')]
 os-info:
@@ -142,17 +142,16 @@ aws-enable-bedrock project_name profile='default' region='us-east-1' model='*':
 # Each recipe accepts parameters instead of relying on cookiecutter template variables.
 #
 
-# Connect to a running ECS task via ECS Exec
+# Idempotent shared VPC creation with tagged resources
 [group('aws-terraform')]
-aws-ecs-exec service environment='development' profile='default' region='us-east-1' command='bash':
+aws-setup-vpc vpc_name='tn-shared' environment='dev' profile='default' region='us-east-1':
   #!/usr/bin/env bash
   set -e
 
-  SERVICE="{{service}}"
+  VPC_NAME="{{vpc_name}}"
   ENVIRONMENT="{{environment}}"
   AWS_PROFILE="{{profile}}"
   AWS_REGION="{{region}}"
-  COMMAND_CHOICE="{{command}}"
 
   PROFILE_FLAG=""
   if [[ "$AWS_PROFILE" != "default" ]]; then
@@ -160,263 +159,158 @@ aws-ecs-exec service environment='development' profile='default' region='us-east
   fi
   REGION_FLAG="--region $AWS_REGION"
 
-  CLUSTER_NAME="cluster-${SERVICE}-${ENVIRONMENT}"
+  TAG_PREFIX="${VPC_NAME}-${ENVIRONMENT}"
 
-  echo "ECS Exec - Connect to running tasks"
-  echo "======================================="
-  echo "  Service: $SERVICE"
-  echo "  Environment: $ENVIRONMENT"
-  echo "  Cluster: $CLUSTER_NAME"
+  echo "Shared VPC Setup"
+  echo "================"
+  echo "  VPC Name: $TAG_PREFIX"
   echo "  AWS Profile: $AWS_PROFILE"
   echo "  AWS Region: $AWS_REGION"
-
-  # Check if cluster exists
-  if ! aws ecs describe-clusters --clusters "$CLUSTER_NAME" $PROFILE_FLAG $REGION_FLAG &>/dev/null; then
-    echo "Error: Cluster '$CLUSTER_NAME' not found"
-    exit 1
-  fi
-
-  # List available services
   echo ""
-  echo "Available services:"
-  SERVICES=$(aws ecs list-services --cluster "$CLUSTER_NAME" $PROFILE_FLAG $REGION_FLAG --query 'serviceArns[*]' --output text)
 
-  if [[ -z "$SERVICES" ]]; then
-    echo "Error: No services found in cluster '$CLUSTER_NAME'"
+  # Check AWS CLI
+  if ! command -v aws &> /dev/null; then
+    echo "Error: AWS CLI not found. Please install AWS CLI first."
     exit 1
   fi
 
-  SERVICE_NAMES=()
-  i=1
-  for service_arn in $SERVICES; do
-    service_name=$(basename "$service_arn")
-    SERVICE_NAMES+=("$service_name")
-    echo "  $i) $service_name"
-    ((i++))
-  done
-
-  echo ""
-  read -p "Select service number (1): " SERVICE_CHOICE
-  SERVICE_CHOICE=${SERVICE_CHOICE:-1}
-
-  if [[ "$SERVICE_CHOICE" -lt 1 || "$SERVICE_CHOICE" -gt ${#SERVICE_NAMES[@]} ]]; then
-    echo "Error: Invalid service selection"
+  if ! aws sts get-caller-identity $PROFILE_FLAG &> /dev/null; then
+    echo "Error: AWS CLI not configured for profile '$AWS_PROFILE'. Run 'aws configure' first."
     exit 1
   fi
 
-  SELECTED_SERVICE=${SERVICE_NAMES[$((SERVICE_CHOICE-1))]}
-  echo "Selected: $SELECTED_SERVICE"
-
-  # Get running tasks
-  TASKS=$(aws ecs list-tasks --cluster "$CLUSTER_NAME" --service-name "$SELECTED_SERVICE" $PROFILE_FLAG $REGION_FLAG --desired-status RUNNING --query 'taskArns[*]' --output text)
-
-  if [[ -z "$TASKS" ]]; then
-    echo "Error: No running tasks found for service '$SELECTED_SERVICE'"
-    exit 1
-  fi
-
-  TASK_ARNS=($TASKS)
-  if [[ ${#TASK_ARNS[@]} -gt 1 ]]; then
-    echo ""
-    echo "Multiple tasks found:"
-    for i in "${!TASK_ARNS[@]}"; do
-      task_id=$(basename "${TASK_ARNS[$i]}")
-      echo "  $((i+1))) $task_id"
-    done
-    read -p "Select task number (1): " TASK_CHOICE
-    TASK_CHOICE=${TASK_CHOICE:-1}
-    SELECTED_TASK=${TASK_ARNS[$((TASK_CHOICE-1))]}
-  else
-    SELECTED_TASK=${TASK_ARNS[0]}
-  fi
-
-  TASK_ID=$(basename "$SELECTED_TASK")
-  echo "Selected task: $TASK_ID"
-
-  # Get container name
-  TASK_DEF=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$SELECTED_TASK" $PROFILE_FLAG $REGION_FLAG --query 'tasks[0].taskDefinitionArn' --output text)
-  CONTAINER_NAME=$(aws ecs describe-task-definition --task-definition "$TASK_DEF" $PROFILE_FLAG $REGION_FLAG --query 'taskDefinition.containerDefinitions[0].name' --output text)
-  echo "Container: $CONTAINER_NAME"
-
-  # Parse command choice
-  case $COMMAND_CHOICE in
-    bash)       COMMAND="/bin/bash" ;;
-    sh)         COMMAND="/bin/sh" ;;
-    django)     COMMAND="python manage.py shell" ;;
-    dbshell)    COMMAND="python manage.py dbshell" ;;
-    *)          COMMAND="$COMMAND_CHOICE" ;;
-  esac
-
-  echo ""
-  echo "Connecting... (command: $COMMAND)"
-  echo "Type 'exit' to disconnect"
-  echo "===================="
-
-  aws ecs execute-command \
-    --cluster "$CLUSTER_NAME" \
-    --task "$TASK_ID" \
-    --container "$CONTAINER_NAME" \
-    --interactive \
-    --command "$COMMAND" \
-    $PROFILE_FLAG $REGION_FLAG
-
-# Stream CloudWatch logs from ECS services
-[group('aws-terraform')]
-aws-stream-logs service environment='development' profile='default' region='us-east-1' stream_type='a' filter='' duration='5m':
-  #!/usr/bin/env bash
-  set -e
-
-  SERVICE="{{service}}"
-  ENVIRONMENT="{{environment}}"
-  AWS_PROFILE="{{profile}}"
-  AWS_REGION="{{region}}"
-  STREAM_TYPE="{{stream_type}}"
-  FILTER_PATTERN="{{filter}}"
-  START_TIME="{{duration}}"
-
-  PROFILE_FLAG=""
-  if [[ "$AWS_PROFILE" != "default" ]]; then
-    PROFILE_FLAG="--profile $AWS_PROFILE"
-  fi
-  REGION_FLAG="--region $AWS_REGION"
-
-  LOG_GROUP="/ecs/${SERVICE}/${ENVIRONMENT}"
-
-  echo "ECS Logs Streaming"
-  echo "============================================="
-  echo "  Service: $SERVICE"
-  echo "  Environment: $ENVIRONMENT"
-  echo "  Log Group: $LOG_GROUP"
-  echo "  AWS Profile: $AWS_PROFILE"
-  echo "  AWS Region: $AWS_REGION"
-
-  # Check if log group exists
-  if ! aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" $PROFILE_FLAG $REGION_FLAG --query 'logGroups[?logGroupName==`'"$LOG_GROUP"'`]' --output text | grep -q "$LOG_GROUP"; then
-    echo "Error: Log group '$LOG_GROUP' not found"
-    echo "Tip: Make sure your service is deployed and running"
-    exit 1
-  fi
-
-  # Get available log streams
-  STREAMS=$(aws logs describe-log-streams \
-    --log-group-name "$LOG_GROUP" \
-    --order-by LastEventTime \
-    --descending \
-    --max-items 20 \
+  # 1. Create or find VPC
+  echo "Checking for existing VPC..."
+  EXISTING_VPC=$(aws ec2 describe-vpcs \
+    --filters "Name=tag:Name,Values=${TAG_PREFIX}" \
     $PROFILE_FLAG $REGION_FLAG \
-    --query 'logStreams[*].logStreamName' \
-    --output text)
+    --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "None")
 
-  if [[ -z "$STREAMS" ]]; then
-    echo "Error: No log streams found in '$LOG_GROUP'"
-    exit 1
+  if [[ "$EXISTING_VPC" != "None" && -n "$EXISTING_VPC" ]]; then
+    VPC_ID="$EXISTING_VPC"
+    echo "VPC already exists: $VPC_ID"
+  else
+    echo "Creating VPC..."
+    VPC_ID=$(aws ec2 create-vpc \
+      --cidr-block 10.0.0.0/16 \
+      $PROFILE_FLAG $REGION_FLAG \
+      --query 'Vpc.VpcId' --output text)
+
+    aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-support $PROFILE_FLAG $REGION_FLAG
+    aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-hostnames $PROFILE_FLAG $REGION_FLAG
+
+    aws ec2 create-tags --resources "$VPC_ID" \
+      --tags Key=Name,Value="${TAG_PREFIX}" \
+      $PROFILE_FLAG $REGION_FLAG
+    echo "VPC created: $VPC_ID"
   fi
 
-  # Categorize streams
-  SERVER_STREAMS=()
-  WORKER_STREAMS=()
-  OTHER_STREAMS=()
+  # 2. Create or find Internet Gateway
+  echo ""
+  echo "Checking for Internet Gateway..."
+  EXISTING_IGW=$(aws ec2 describe-internet-gateways \
+    --filters "Name=tag:Name,Values=${TAG_PREFIX}-igw" \
+    $PROFILE_FLAG $REGION_FLAG \
+    --query 'InternetGateways[0].InternetGatewayId' --output text 2>/dev/null || echo "None")
 
-  i=1
-  for stream in $STREAMS; do
-    if [[ "$stream" =~ server- ]]; then
-      SERVER_STREAMS+=("$stream")
-      echo "  $i) [SERVER] $stream"
-    elif [[ "$stream" =~ worker- ]]; then
-      WORKER_STREAMS+=("$stream")
-      echo "  $i) [WORKER] $stream"
+  if [[ "$EXISTING_IGW" != "None" && -n "$EXISTING_IGW" ]]; then
+    IGW_ID="$EXISTING_IGW"
+    echo "Internet Gateway already exists: $IGW_ID"
+  else
+    echo "Creating Internet Gateway..."
+    IGW_ID=$(aws ec2 create-internet-gateway \
+      $PROFILE_FLAG $REGION_FLAG \
+      --query 'InternetGateway.InternetGatewayId' --output text)
+
+    aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" \
+      $PROFILE_FLAG $REGION_FLAG
+
+    aws ec2 create-tags --resources "$IGW_ID" \
+      --tags Key=Name,Value="${TAG_PREFIX}-igw" \
+      $PROFILE_FLAG $REGION_FLAG
+    echo "Internet Gateway created and attached: $IGW_ID"
+  fi
+
+  # 3. Create or find Route Table
+  echo ""
+  echo "Checking for Route Table..."
+  EXISTING_RT=$(aws ec2 describe-route-tables \
+    --filters "Name=tag:Name,Values=${TAG_PREFIX}-rt" \
+    $PROFILE_FLAG $REGION_FLAG \
+    --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "None")
+
+  if [[ "$EXISTING_RT" != "None" && -n "$EXISTING_RT" ]]; then
+    RT_ID="$EXISTING_RT"
+    echo "Route Table already exists: $RT_ID"
+  else
+    echo "Creating Route Table..."
+    RT_ID=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
+      $PROFILE_FLAG $REGION_FLAG \
+      --query 'RouteTable.RouteTableId' --output text)
+
+    aws ec2 create-route --route-table-id "$RT_ID" \
+      --destination-cidr-block 0.0.0.0/0 \
+      --gateway-id "$IGW_ID" \
+      $PROFILE_FLAG $REGION_FLAG
+
+    aws ec2 create-tags --resources "$RT_ID" \
+      --tags Key=Name,Value="${TAG_PREFIX}-rt" \
+      $PROFILE_FLAG $REGION_FLAG
+    echo "Route Table created with default route: $RT_ID"
+  fi
+
+  # 4. Create subnets across 2 AZs
+  echo ""
+  echo "Checking for subnets..."
+
+  # Get available AZs
+  AZS=($(aws ec2 describe-availability-zones \
+    --filters "Name=state,Values=available" \
+    $PROFILE_FLAG $REGION_FLAG \
+    --query 'AvailabilityZones[0:2].ZoneName' --output text))
+
+  SUBNET_CIDRS=("10.0.1.0/24" "10.0.2.0/24")
+
+  for i in 0 1; do
+    AZ="${AZS[$i]}"
+    CIDR="${SUBNET_CIDRS[$i]}"
+    SUBNET_NAME="${TAG_PREFIX}-subnet-${AZ}"
+
+    EXISTING_SUBNET=$(aws ec2 describe-subnets \
+      --filters "Name=tag:Name,Values=${SUBNET_NAME}" "Name=vpc-id,Values=${VPC_ID}" \
+      $PROFILE_FLAG $REGION_FLAG \
+      --query 'Subnets[0].SubnetId' --output text 2>/dev/null || echo "None")
+
+    if [[ "$EXISTING_SUBNET" != "None" && -n "$EXISTING_SUBNET" ]]; then
+      echo "Subnet already exists in ${AZ}: $EXISTING_SUBNET"
     else
-      OTHER_STREAMS+=("$stream")
-      echo "  $i) [OTHER] $stream"
+      echo "Creating subnet in ${AZ} (${CIDR})..."
+      SUBNET_ID=$(aws ec2 create-subnet \
+        --vpc-id "$VPC_ID" \
+        --cidr-block "$CIDR" \
+        --availability-zone "$AZ" \
+        $PROFILE_FLAG $REGION_FLAG \
+        --query 'Subnet.SubnetId' --output text)
+
+      aws ec2 modify-subnet-attribute --subnet-id "$SUBNET_ID" \
+        --map-public-ip-on-launch $PROFILE_FLAG $REGION_FLAG
+
+      aws ec2 associate-route-table --route-table-id "$RT_ID" --subnet-id "$SUBNET_ID" \
+        $PROFILE_FLAG $REGION_FLAG > /dev/null
+
+      aws ec2 create-tags --resources "$SUBNET_ID" \
+        --tags Key=Name,Value="${SUBNET_NAME}" \
+        $PROFILE_FLAG $REGION_FLAG
+      echo "Subnet created in ${AZ}: $SUBNET_ID"
     fi
-    ((i++))
   done
 
-  ALL_STREAMS=("${SERVER_STREAMS[@]}" "${WORKER_STREAMS[@]}" "${OTHER_STREAMS[@]}")
-
-  SELECTED_STREAMS=()
-  case $STREAM_TYPE in
-    a|A)  SELECTED_STREAMS=("${SERVER_STREAMS[@]}"); echo "Streaming all server logs" ;;
-    w|W)  SELECTED_STREAMS=("${WORKER_STREAMS[@]}"); echo "Streaming all worker logs" ;;
-    '*')  SELECTED_STREAMS=("${ALL_STREAMS[@]}"); echo "Streaming all logs" ;;
-    *)
-      if [[ "$STREAM_TYPE" =~ ^[0-9]+$ ]] && [[ "$STREAM_TYPE" -ge 1 ]] && [[ "$STREAM_TYPE" -le ${#ALL_STREAMS[@]} ]]; then
-        SELECTED_STREAMS=("${ALL_STREAMS[$((STREAM_TYPE-1))]}")
-        echo "Streaming: ${ALL_STREAMS[$((STREAM_TYPE-1))]}"
-      else
-        echo "Error: Invalid stream selection"
-        exit 1
-      fi
-      ;;
-  esac
-
-  if [[ ${#SELECTED_STREAMS[@]} -eq 0 ]]; then
-    echo "Error: No streams selected"
-    exit 1
-  fi
-
-  # Validate duration format
-  if [[ ! "$START_TIME" =~ ^[0-9]+[mh]$ ]]; then
-    echo "Error: Invalid duration format. Use '30m' or '2h'"
-    exit 1
-  fi
-
-  # Build filter command
-  FILTER_CMD="aws logs filter-log-events --log-group-name \"$LOG_GROUP\" --start-time \$(date -v-${START_TIME} +%s)000 $PROFILE_FLAG $REGION_FLAG"
-
-  if [[ -n "$FILTER_PATTERN" ]]; then
-    FILTER_CMD="$FILTER_CMD --filter-pattern \"$FILTER_PATTERN\""
-  fi
-
-  if [[ ${#SELECTED_STREAMS[@]} -lt ${#ALL_STREAMS[@]} ]]; then
-    STREAM_NAMES=$(IFS=' '; echo "${SELECTED_STREAMS[*]}")
-    FILTER_CMD="$FILTER_CMD --log-stream-names $STREAM_NAMES"
-  fi
-
   echo ""
-  echo "Log Group: $LOG_GROUP"
-  echo "Streams: ${#SELECTED_STREAMS[@]} selected"
-  echo "Time Range: Last $START_TIME"
-  if [[ -n "$FILTER_PATTERN" ]]; then
-    echo "Filter: $FILTER_PATTERN"
-  fi
-  echo ""
-  echo "Press Ctrl+C to stop streaming"
-  echo "===================="
-
-  # Stream logs with continuous updates
-  LAST_SEEN=""
-  while true; do
-    CMD="$FILTER_CMD --output json"
-    if [[ -n "$LAST_SEEN" ]]; then
-      CMD="$CMD --next-token $LAST_SEEN"
-    fi
-
-    RESPONSE=$(eval "$CMD" 2>/dev/null || echo '{"events":[],"nextToken":null}')
-    EVENTS=$(echo "$RESPONSE" | jq -c '.events[]?' 2>/dev/null)
-    NEXT_TOKEN=$(echo "$RESPONSE" | jq -r '.nextToken // empty' 2>/dev/null)
-
-    if [[ -n "$EVENTS" ]]; then
-      while IFS= read -r event; do
-        if [[ -n "$event" ]]; then
-          timestamp=$(echo "$event" | jq -r '.timestamp // empty')
-          message=$(echo "$event" | jq -r '.message // empty')
-          stream=$(echo "$event" | jq -r '.logStreamName // empty')
-          if [[ -n "$timestamp" && -n "$message" ]]; then
-            formatted_time=$(date -r "$((timestamp/1000))" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$timestamp")
-            stream_short=$(basename "$stream")
-            echo "[$formatted_time] [$stream_short] $message"
-          fi
-        fi
-      done <<< "$EVENTS"
-    fi
-
-    if [[ -n "$NEXT_TOKEN" && "$NEXT_TOKEN" != "null" ]]; then
-      LAST_SEEN="$NEXT_TOKEN"
-    fi
-
-    sleep 2
-  done
+  echo "VPC setup complete!"
+  echo "  VPC: $VPC_ID (${TAG_PREFIX})"
+  echo "  Internet Gateway: $IGW_ID (${TAG_PREFIX}-igw)"
+  echo "  Route Table: $RT_ID (${TAG_PREFIX}-rt)"
+  echo "  Subnets: 2 across ${AZS[0]} and ${AZS[1]}"
 
 # Create S3 bucket and DynamoDB table for Terraform remote state backend
 [group('aws-terraform')]
@@ -528,7 +422,6 @@ aws-tf-setup-backend service profile='default':
   echo "  Region: $AWS_REGION"
   echo ""
   echo "Next: run 'tn aws-tf-init-backend $SERVICE <environment>' to initialize Terraform"
-
 # Initialize Terraform with the correct backend configuration for an environment
 [group('aws-terraform')]
 aws-tf-init-backend service environment='development' profile='default' region='us-east-1' force='false':
@@ -608,7 +501,6 @@ aws-tf-init-backend service environment='development' profile='default' region='
   echo "  State Location: s3://${BUCKET}/${STATE_KEY}"
   echo "  Lock Table: ${TABLE}"
   echo "  Environment: ${ENVIRONMENT}"
-
 # Create GitHub Actions OIDC IAM role for a given org and environment
 [group('aws-terraform')]
 aws-setup-oidc github_org environment='development' secrets_bucket='' profile='default':
@@ -788,7 +680,6 @@ aws-setup-oidc github_org environment='development' secrets_bucket='' profile='d
   echo "Next steps:"
   echo "  1. In GitHub repo Settings > Secrets and variables > Actions > Variables"
   echo "  2. Add: $(echo $ENVIRONMENT | tr '[:lower:]' '[:upper:]')_AWS_ROLE_ARN = $ROLE_ARN"
-
 # Create S3 bucket for secrets storage with proper security
 [group('aws-terraform')]
 aws-setup-secrets service environment profile='default' region='us-east-1':
@@ -899,7 +790,280 @@ aws-setup-secrets service environment profile='default' region='us-east-1':
   echo "  Bucket: $SECRETS_BUCKET"
   echo "  Environment: $ENVIRONMENT"
   echo "  Role: $ROLE_NAME"
+# Connect to a running ECS task via ECS Exec
+[group('aws-terraform')]
+aws-ecs-exec service environment='development' profile='default' region='us-east-1' command='bash':
+  #!/usr/bin/env bash
+  set -e
 
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+  COMMAND_CHOICE="{{command}}"
+
+  PROFILE_FLAG=""
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    PROFILE_FLAG="--profile $AWS_PROFILE"
+  fi
+  REGION_FLAG="--region $AWS_REGION"
+
+  CLUSTER_NAME="cluster-${SERVICE}-${ENVIRONMENT}"
+
+  echo "ECS Exec - Connect to running tasks"
+  echo "======================================="
+  echo "  Service: $SERVICE"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  Cluster: $CLUSTER_NAME"
+  echo "  AWS Profile: $AWS_PROFILE"
+  echo "  AWS Region: $AWS_REGION"
+
+  # Check if cluster exists
+  if ! aws ecs describe-clusters --clusters "$CLUSTER_NAME" $PROFILE_FLAG $REGION_FLAG &>/dev/null; then
+    echo "Error: Cluster '$CLUSTER_NAME' not found"
+    exit 1
+  fi
+
+  # List available services
+  echo ""
+  echo "Available services:"
+  SERVICES=$(aws ecs list-services --cluster "$CLUSTER_NAME" $PROFILE_FLAG $REGION_FLAG --query 'serviceArns[*]' --output text)
+
+  if [[ -z "$SERVICES" ]]; then
+    echo "Error: No services found in cluster '$CLUSTER_NAME'"
+    exit 1
+  fi
+
+  SERVICE_NAMES=()
+  i=1
+  for service_arn in $SERVICES; do
+    service_name=$(basename "$service_arn")
+    SERVICE_NAMES+=("$service_name")
+    echo "  $i) $service_name"
+    ((i++))
+  done
+
+  echo ""
+  read -p "Select service number (1): " SERVICE_CHOICE
+  SERVICE_CHOICE=${SERVICE_CHOICE:-1}
+
+  if [[ "$SERVICE_CHOICE" -lt 1 || "$SERVICE_CHOICE" -gt ${#SERVICE_NAMES[@]} ]]; then
+    echo "Error: Invalid service selection"
+    exit 1
+  fi
+
+  SELECTED_SERVICE=${SERVICE_NAMES[$((SERVICE_CHOICE-1))]}
+  echo "Selected: $SELECTED_SERVICE"
+
+  # Get running tasks
+  TASKS=$(aws ecs list-tasks --cluster "$CLUSTER_NAME" --service-name "$SELECTED_SERVICE" $PROFILE_FLAG $REGION_FLAG --desired-status RUNNING --query 'taskArns[*]' --output text)
+
+  if [[ -z "$TASKS" ]]; then
+    echo "Error: No running tasks found for service '$SELECTED_SERVICE'"
+    exit 1
+  fi
+
+  TASK_ARNS=($TASKS)
+  if [[ ${#TASK_ARNS[@]} -gt 1 ]]; then
+    echo ""
+    echo "Multiple tasks found:"
+    for i in "${!TASK_ARNS[@]}"; do
+      task_id=$(basename "${TASK_ARNS[$i]}")
+      echo "  $((i+1))) $task_id"
+    done
+    read -p "Select task number (1): " TASK_CHOICE
+    TASK_CHOICE=${TASK_CHOICE:-1}
+    SELECTED_TASK=${TASK_ARNS[$((TASK_CHOICE-1))]}
+  else
+    SELECTED_TASK=${TASK_ARNS[0]}
+  fi
+
+  TASK_ID=$(basename "$SELECTED_TASK")
+  echo "Selected task: $TASK_ID"
+
+  # Get container name
+  TASK_DEF=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$SELECTED_TASK" $PROFILE_FLAG $REGION_FLAG --query 'tasks[0].taskDefinitionArn' --output text)
+  CONTAINER_NAME=$(aws ecs describe-task-definition --task-definition "$TASK_DEF" $PROFILE_FLAG $REGION_FLAG --query 'taskDefinition.containerDefinitions[0].name' --output text)
+  echo "Container: $CONTAINER_NAME"
+
+  # Parse command choice
+  case $COMMAND_CHOICE in
+    bash)       COMMAND="/bin/bash" ;;
+    sh)         COMMAND="/bin/sh" ;;
+    django)     COMMAND="python manage.py shell" ;;
+    dbshell)    COMMAND="python manage.py dbshell" ;;
+    *)          COMMAND="$COMMAND_CHOICE" ;;
+  esac
+
+  echo ""
+  echo "Connecting... (command: $COMMAND)"
+  echo "Type 'exit' to disconnect"
+  echo "===================="
+
+  aws ecs execute-command \
+    --cluster "$CLUSTER_NAME" \
+    --task "$TASK_ID" \
+    --container "$CONTAINER_NAME" \
+    --interactive \
+    --command "$COMMAND" \
+    $PROFILE_FLAG $REGION_FLAG
+# Stream CloudWatch logs from ECS services
+[group('aws-terraform')]
+aws-stream-logs service environment='development' profile='default' region='us-east-1' stream_type='a' filter='' duration='5m':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+  STREAM_TYPE="{{stream_type}}"
+  FILTER_PATTERN="{{filter}}"
+  START_TIME="{{duration}}"
+
+  PROFILE_FLAG=""
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    PROFILE_FLAG="--profile $AWS_PROFILE"
+  fi
+  REGION_FLAG="--region $AWS_REGION"
+
+  LOG_GROUP="/ecs/${SERVICE}/${ENVIRONMENT}"
+
+  echo "ECS Logs Streaming"
+  echo "============================================="
+  echo "  Service: $SERVICE"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  Log Group: $LOG_GROUP"
+  echo "  AWS Profile: $AWS_PROFILE"
+  echo "  AWS Region: $AWS_REGION"
+
+  # Check if log group exists
+  if ! aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" $PROFILE_FLAG $REGION_FLAG --query 'logGroups[?logGroupName==`'"$LOG_GROUP"'`]' --output text | grep -q "$LOG_GROUP"; then
+    echo "Error: Log group '$LOG_GROUP' not found"
+    echo "Tip: Make sure your service is deployed and running"
+    exit 1
+  fi
+
+  # Get available log streams
+  STREAMS=$(aws logs describe-log-streams \
+    --log-group-name "$LOG_GROUP" \
+    --order-by LastEventTime \
+    --descending \
+    --max-items 20 \
+    $PROFILE_FLAG $REGION_FLAG \
+    --query 'logStreams[*].logStreamName' \
+    --output text)
+
+  if [[ -z "$STREAMS" ]]; then
+    echo "Error: No log streams found in '$LOG_GROUP'"
+    exit 1
+  fi
+
+  # Categorize streams
+  SERVER_STREAMS=()
+  WORKER_STREAMS=()
+  OTHER_STREAMS=()
+
+  i=1
+  for stream in $STREAMS; do
+    if [[ "$stream" =~ server- ]]; then
+      SERVER_STREAMS+=("$stream")
+      echo "  $i) [SERVER] $stream"
+    elif [[ "$stream" =~ worker- ]]; then
+      WORKER_STREAMS+=("$stream")
+      echo "  $i) [WORKER] $stream"
+    else
+      OTHER_STREAMS+=("$stream")
+      echo "  $i) [OTHER] $stream"
+    fi
+    ((i++))
+  done
+
+  ALL_STREAMS=("${SERVER_STREAMS[@]}" "${WORKER_STREAMS[@]}" "${OTHER_STREAMS[@]}")
+
+  SELECTED_STREAMS=()
+  case $STREAM_TYPE in
+    a|A)  SELECTED_STREAMS=("${SERVER_STREAMS[@]}"); echo "Streaming all server logs" ;;
+    w|W)  SELECTED_STREAMS=("${WORKER_STREAMS[@]}"); echo "Streaming all worker logs" ;;
+    '*')  SELECTED_STREAMS=("${ALL_STREAMS[@]}"); echo "Streaming all logs" ;;
+    *)
+      if [[ "$STREAM_TYPE" =~ ^[0-9]+$ ]] && [[ "$STREAM_TYPE" -ge 1 ]] && [[ "$STREAM_TYPE" -le ${#ALL_STREAMS[@]} ]]; then
+        SELECTED_STREAMS=("${ALL_STREAMS[$((STREAM_TYPE-1))]}")
+        echo "Streaming: ${ALL_STREAMS[$((STREAM_TYPE-1))]}"
+      else
+        echo "Error: Invalid stream selection"
+        exit 1
+      fi
+      ;;
+  esac
+
+  if [[ ${#SELECTED_STREAMS[@]} -eq 0 ]]; then
+    echo "Error: No streams selected"
+    exit 1
+  fi
+
+  # Validate duration format
+  if [[ ! "$START_TIME" =~ ^[0-9]+[mh]$ ]]; then
+    echo "Error: Invalid duration format. Use '30m' or '2h'"
+    exit 1
+  fi
+
+  # Build filter command
+  FILTER_CMD="aws logs filter-log-events --log-group-name \"$LOG_GROUP\" --start-time \$(date -v-${START_TIME} +%s)000 $PROFILE_FLAG $REGION_FLAG"
+
+  if [[ -n "$FILTER_PATTERN" ]]; then
+    FILTER_CMD="$FILTER_CMD --filter-pattern \"$FILTER_PATTERN\""
+  fi
+
+  if [[ ${#SELECTED_STREAMS[@]} -lt ${#ALL_STREAMS[@]} ]]; then
+    STREAM_NAMES=$(IFS=' '; echo "${SELECTED_STREAMS[*]}")
+    FILTER_CMD="$FILTER_CMD --log-stream-names $STREAM_NAMES"
+  fi
+
+  echo ""
+  echo "Log Group: $LOG_GROUP"
+  echo "Streams: ${#SELECTED_STREAMS[@]} selected"
+  echo "Time Range: Last $START_TIME"
+  if [[ -n "$FILTER_PATTERN" ]]; then
+    echo "Filter: $FILTER_PATTERN"
+  fi
+  echo ""
+  echo "Press Ctrl+C to stop streaming"
+  echo "===================="
+
+  # Stream logs with continuous updates
+  LAST_SEEN=""
+  while true; do
+    CMD="$FILTER_CMD --output json"
+    if [[ -n "$LAST_SEEN" ]]; then
+      CMD="$CMD --next-token $LAST_SEEN"
+    fi
+
+    RESPONSE=$(eval "$CMD" 2>/dev/null || echo '{"events":[],"nextToken":null}')
+    EVENTS=$(echo "$RESPONSE" | jq -c '.events[]?' 2>/dev/null)
+    NEXT_TOKEN=$(echo "$RESPONSE" | jq -r '.nextToken // empty' 2>/dev/null)
+
+    if [[ -n "$EVENTS" ]]; then
+      while IFS= read -r event; do
+        if [[ -n "$event" ]]; then
+          timestamp=$(echo "$event" | jq -r '.timestamp // empty')
+          message=$(echo "$event" | jq -r '.message // empty')
+          stream=$(echo "$event" | jq -r '.logStreamName // empty')
+          if [[ -n "$timestamp" && -n "$message" ]]; then
+            formatted_time=$(date -r "$((timestamp/1000))" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$timestamp")
+            stream_short=$(basename "$stream")
+            echo "[$formatted_time] [$stream_short] $message"
+          fi
+        fi
+      done <<< "$EVENTS"
+    fi
+
+    if [[ -n "$NEXT_TOKEN" && "$NEXT_TOKEN" != "null" ]]; then
+      LAST_SEEN="$NEXT_TOKEN"
+    fi
+
+    sleep 2
+  done
 #
 # TN Models Helpers
 #

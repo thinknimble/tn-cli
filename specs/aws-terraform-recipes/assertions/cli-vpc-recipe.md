@@ -4,6 +4,7 @@ parent: aws-terraform-recipes
 created: 2026-07-20T23:00:00Z
 priority: 1
 status: not_started
+branch: feature/aws-pipeline
 ---
 
 # VPC Recipe: `aws-setup-vpc` Idempotently Creates a Tagged Shared VPC

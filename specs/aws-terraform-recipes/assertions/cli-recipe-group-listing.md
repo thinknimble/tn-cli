@@ -3,7 +3,7 @@ id: cli-recipe-group-listing
 parent: aws-terraform-recipes
 created: 2026-07-20T23:00:00Z
 priority: 1
-status: not_started
+status: done
 depends-on: cli-script-recipes
 branch: feature/aws-pipeline
 
