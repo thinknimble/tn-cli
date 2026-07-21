@@ -501,16 +501,23 @@ aws-tf-init-backend service environment='development' profile='default' region='
   echo "  State Location: s3://${BUCKET}/${STATE_KEY}"
   echo "  Lock Table: ${TABLE}"
   echo "  Environment: ${ENVIRONMENT}"
-# Create GitHub Actions OIDC IAM role for a given org and environment
+# Create GitHub Actions OIDC IAM role for a given org and environment.
+# Can also be re-run to update an existing OIDC role with a new secrets bucket for a new project.
 [group('aws-terraform')]
-aws-setup-oidc github_org environment='development' secrets_bucket='' profile='default':
+aws-setup-oidc service github_org secrets_bucket environment='development' profile='default':
   #!/usr/bin/env bash
   set -e
 
+  SERVICE="{{service}}"
   GITHUB_ORG="{{github_org}}"
   ENVIRONMENT="{{environment}}"
   SECRETS_BUCKET="{{secrets_bucket}}"
   AWS_PROFILE="{{profile}}"
+
+  if [[ -z "$SERVICE" ]]; then
+    echo "Error: service is required (e.g., 'my-project')"
+    exit 1
+  fi
 
   if [[ -z "$GITHUB_ORG" ]]; then
     echo "Error: github_org is required"
@@ -527,10 +534,11 @@ aws-setup-oidc github_org environment='development' secrets_bucket='' profile='d
   }
 
   ACCOUNT_ID=$(run_aws sts get-caller-identity --query Account --output text)
-  ROLE_NAME="github-actions-${ENVIRONMENT}"
+  ROLE_NAME="github-actions-${SERVICE}-${ENVIRONMENT}"
 
   echo "GitHub Actions OIDC Setup"
   echo "========================="
+  echo "  Service: $SERVICE"
   echo "  GitHub Org: $GITHUB_ORG"
   echo "  Environment: $ENVIRONMENT"
   echo "  AWS Account: $ACCOUNT_ID"
@@ -639,37 +647,35 @@ aws-setup-oidc github_org environment='development' secrets_bucket='' profile='d
   rm -f /tmp/oidc-deploy-policy.json
   echo "Deployment policy attached"
 
-  # 4. Create secrets policy if secrets_bucket provided (idempotent)
-  if [[ -n "$SECRETS_BUCKET" ]]; then
-    echo ""
-    echo "Creating S3 secrets policy..."
-    SECRETS_POLICY_NAME="${ROLE_NAME}-secrets-access"
-    SECRETS_POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${SECRETS_POLICY_NAME}"
+  # 4. Create secrets policy (idempotent)
+  echo ""
+  echo "Creating S3 secrets policy..."
+  SECRETS_POLICY_NAME="${ROLE_NAME}-secrets-access"
+  SECRETS_POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${SECRETS_POLICY_NAME}"
 
-    jq -n --arg bucket "$SECRETS_BUCKET" --arg env "$ENVIRONMENT" '{
-      Version: "2012-10-17",
-      Statement: [
-        {Sid: "SecretsS3Access", Effect: "Allow", Action: ["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:GetObjectVersion"], Resource: ["arn:aws:s3:::\($bucket)/\($env)/*"]},
-        {Sid: "AllowListBucketForEnv", Effect: "Allow", Action: "s3:ListBucket", Resource: "arn:aws:s3:::\($bucket)", Condition: {StringLike: {"s3:prefix": "\($env)/*"}}},
-        {Sid: "AllowListBuckets", Effect: "Allow", Action: "s3:ListAllMyBuckets", Resource: "*"}
-      ]
-    }' > /tmp/oidc-secrets-policy.json
+  jq -n --arg bucket "$SECRETS_BUCKET" --arg env "$ENVIRONMENT" '{
+    Version: "2012-10-17",
+    Statement: [
+      {Sid: "SecretsS3Access", Effect: "Allow", Action: ["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:GetObjectVersion"], Resource: ["arn:aws:s3:::\($bucket)/\($env)/*"]},
+      {Sid: "AllowListBucketForEnv", Effect: "Allow", Action: "s3:ListBucket", Resource: "arn:aws:s3:::\($bucket)", Condition: {StringLike: {"s3:prefix": "\($env)/*"}}},
+      {Sid: "AllowListBuckets", Effect: "Allow", Action: "s3:ListAllMyBuckets", Resource: "*"}
+    ]
+  }' > /tmp/oidc-secrets-policy.json
 
-    if run_aws iam get-policy --policy-arn "$SECRETS_POLICY_ARN" &>/dev/null; then
-      run_aws iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$SECRETS_POLICY_ARN" 2>/dev/null || true
-      run_aws iam list-policy-versions --policy-arn "$SECRETS_POLICY_ARN" \
-        --query 'Versions[?!IsDefaultVersion].[VersionId]' --output text | while read version; do
-        run_aws iam delete-policy-version --policy-arn "$SECRETS_POLICY_ARN" --version-id "$version" 2>/dev/null || true
-      done
-      run_aws iam delete-policy --policy-arn "$SECRETS_POLICY_ARN" 2>/dev/null || true
-    fi
-
-    run_aws iam create-policy --policy-name "$SECRETS_POLICY_NAME" \
-      --policy-document file:///tmp/oidc-secrets-policy.json
-    run_aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn "$SECRETS_POLICY_ARN"
-    rm -f /tmp/oidc-secrets-policy.json
-    echo "Secrets policy attached"
+  if run_aws iam get-policy --policy-arn "$SECRETS_POLICY_ARN" &>/dev/null; then
+    run_aws iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$SECRETS_POLICY_ARN" 2>/dev/null || true
+    run_aws iam list-policy-versions --policy-arn "$SECRETS_POLICY_ARN" \
+      --query 'Versions[?!IsDefaultVersion].[VersionId]' --output text | while read version; do
+      run_aws iam delete-policy-version --policy-arn "$SECRETS_POLICY_ARN" --version-id "$version" 2>/dev/null || true
+    done
+    run_aws iam delete-policy --policy-arn "$SECRETS_POLICY_ARN" 2>/dev/null || true
   fi
+
+  run_aws iam create-policy --policy-name "$SECRETS_POLICY_NAME" \
+    --policy-document file:///tmp/oidc-secrets-policy.json
+  run_aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn "$SECRETS_POLICY_ARN"
+  rm -f /tmp/oidc-secrets-policy.json
+  echo "Secrets policy attached"
 
   # Summary
   ROLE_ARN=$(run_aws iam get-role --role-name "$ROLE_NAME" --query Role.Arn --output text)
@@ -677,7 +683,10 @@ aws-setup-oidc github_org environment='development' secrets_bucket='' profile='d
   echo "Setup complete!"
   echo "  Role ARN: $ROLE_ARN"
   echo ""
-  echo "Next steps:"
+  echo "Copy this Role ARN into your environments.json:"
+  echo "  $ROLE_ARN"
+  echo ""
+  echo "Or set it as a GitHub Actions variable:"
   echo "  1. In GitHub repo Settings > Secrets and variables > Actions > Variables"
   echo "  2. Add: $(echo $ENVIRONMENT | tr '[:lower:]' '[:upper:]')_AWS_ROLE_ARN = $ROLE_ARN"
 # Create S3 bucket for secrets storage with proper security
