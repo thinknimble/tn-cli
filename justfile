@@ -504,7 +504,7 @@ aws-tf-init-backend service environment='development' profile='default' region='
 # Create GitHub Actions OIDC IAM role for a given org and environment.
 # Can also be re-run to update an existing OIDC role with a new secrets bucket for a new project.
 [group('aws-terraform')]
-aws-setup-oidc service github_org secrets_bucket environment='development' profile='default':
+aws-setup-oidc service github_org secrets_bucket environment='development' profile='default' repo='':
   #!/usr/bin/env bash
   set -e
 
@@ -513,6 +513,7 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
   ENVIRONMENT="{{environment}}"
   SECRETS_BUCKET="{{secrets_bucket}}"
   AWS_PROFILE="{{profile}}"
+  REPO="{{repo}}"
 
   if [[ -z "$SERVICE" ]]; then
     echo "Error: service is required (e.g., 'my-project')"
@@ -522,6 +523,11 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
   if [[ -z "$GITHUB_ORG" ]]; then
     echo "Error: github_org is required"
     exit 1
+  fi
+
+  # Default repo to github_org/service if not provided
+  if [[ -z "$REPO" ]]; then
+    REPO="${GITHUB_ORG}/${SERVICE}"
   fi
 
   # Set up AWS command helper
@@ -540,6 +546,7 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
   echo "========================="
   echo "  Service: $SERVICE"
   echo "  GitHub Org: $GITHUB_ORG"
+  echo "  GitHub Repo: $REPO"
   echo "  Environment: $ENVIRONMENT"
   echo "  AWS Account: $ACCOUNT_ID"
   echo "  Role Name: $ROLE_NAME"
@@ -565,28 +572,29 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
   # 2. Create or update IAM Role (idempotent)
   echo ""
   echo "Processing IAM Role: $ROLE_NAME"
+  REPO_CONDITION="repo:${REPO}:*"
   if run_aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
     echo "Role $ROLE_NAME already exists"
-    # Check if GitHub org already in trust policy
+    # Check if this specific repo already in trust policy
     TRUST_POLICY=$(run_aws iam get-role --role-name "$ROLE_NAME" --query 'Role.AssumeRolePolicyDocument' --output json)
-    if echo "$TRUST_POLICY" | grep -q "repo:${GITHUB_ORG}/"; then
-      echo "GitHub org '$GITHUB_ORG' already has access"
+    if echo "$TRUST_POLICY" | grep -q "repo:${REPO}:"; then
+      echo "Repo '$REPO' already has access in trust policy"
     else
-      echo "Adding GitHub org '$GITHUB_ORG' to trust policy..."
-      echo "$TRUST_POLICY" | jq --arg org "$GITHUB_ORG" '
+      echo "Adding repo '$REPO' to trust policy..."
+      echo "$TRUST_POLICY" | jq --arg repo_cond "$REPO_CONDITION" '
         (.Statement[0].Condition.StringLike["token.actions.githubusercontent.com:sub"]) |=
-        if type == "string" then [., "repo:\($org)/*:*"]
-        elif type == "array" then . + ["repo:\($org)/*:*"]
-        else "repo:\($org)/*:*"
+        if type == "string" then [., $repo_cond]
+        elif type == "array" then . + [$repo_cond]
+        else $repo_cond
         end
       ' > /tmp/oidc-trust-policy.json
       run_aws iam update-assume-role-policy --role-name "$ROLE_NAME" \
         --policy-document file:///tmp/oidc-trust-policy.json
       rm -f /tmp/oidc-trust-policy.json
-      echo "Trust policy updated"
+      echo "Trust policy updated — added repo: $REPO"
     fi
   else
-    jq -n --arg account "$ACCOUNT_ID" --arg org "$GITHUB_ORG" '{
+    jq -n --arg account "$ACCOUNT_ID" --arg repo_cond "$REPO_CONDITION" '{
       Version: "2012-10-17",
       Statement: [{
         Effect: "Allow",
@@ -594,14 +602,14 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
         Action: "sts:AssumeRoleWithWebIdentity",
         Condition: {
           StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
-          StringLike: { "token.actions.githubusercontent.com:sub": "repo:\($org)/*:*" }
+          StringLike: { "token.actions.githubusercontent.com:sub": $repo_cond }
         }
       }]
     }' > /tmp/oidc-trust-policy.json
     run_aws iam create-role --role-name "$ROLE_NAME" \
       --assume-role-policy-document file:///tmp/oidc-trust-policy.json
     rm -f /tmp/oidc-trust-policy.json
-    echo "IAM role created: $ROLE_NAME"
+    echo "IAM role created: $ROLE_NAME (trust scoped to repo: $REPO)"
   fi
 
   # 3. Create and attach deployment policy (idempotent)
