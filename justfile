@@ -691,12 +691,10 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
   echo "Setup complete!"
   echo "  Role ARN: $ROLE_ARN"
   echo ""
-  echo "Copy this Role ARN into your environments.json:"
-  echo "  $ROLE_ARN"
+  echo "Copy this Role ARN into your .github/environments.json:"
+  echo "  \"role_arn\": \"$ROLE_ARN\""
   echo ""
-  echo "Or set it as a GitHub Actions variable:"
-  echo "  1. In GitHub repo Settings > Secrets and variables > Actions > Variables"
-  echo "  2. Add: $(echo $ENVIRONMENT | tr '[:lower:]' '[:upper:]')_AWS_ROLE_ARN = $ROLE_ARN"
+  echo "Set it under the '$ENVIRONMENT' key alongside account_id, secrets_bucket, and region."
 # Create S3 bucket for secrets storage with proper security
 [group('aws-terraform')]
 aws-setup-secrets service environment profile='default' region='us-east-1':
