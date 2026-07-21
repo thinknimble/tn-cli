@@ -3,7 +3,8 @@ id: cli-script-recipes
 parent: aws-terraform-recipes
 created: 2026-07-20T23:00:00Z
 priority: 1
-status: not_started
+status: done
+branch: feature/aws-pipeline
 ---
 
 # Script Recipes: Six Extracted Operations Exist as tn-cli Recipes

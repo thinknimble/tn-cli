@@ -136,6 +136,771 @@ aws-enable-bedrock project_name profile='default' region='us-east-1' model='*':
   aws cloudformation create-stack --stack-name {{project_name}}-bedrock-stack --template-url 'https://tn-s3-cloud-formation.s3.amazonaws.com/bedrock-user-permissions.yaml' --region {{region}} --parameters ParameterKey=ProjectName,ParameterValue={{project_name}} ParameterKey=AllowedModels,ParameterValue={{model}} --capabilities CAPABILITY_NAMED_IAM --profile={{profile}}
 
 #
+# AWS Terraform Recipes
+#
+# Extracted from tn-spa-bootstrapper template scripts.
+# Each recipe accepts parameters instead of relying on cookiecutter template variables.
+#
+
+# Connect to a running ECS task via ECS Exec
+[group('aws-terraform')]
+aws-ecs-exec service environment='development' profile='default' region='us-east-1' command='bash':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+  COMMAND_CHOICE="{{command}}"
+
+  PROFILE_FLAG=""
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    PROFILE_FLAG="--profile $AWS_PROFILE"
+  fi
+  REGION_FLAG="--region $AWS_REGION"
+
+  CLUSTER_NAME="cluster-${SERVICE}-${ENVIRONMENT}"
+
+  echo "ECS Exec - Connect to running tasks"
+  echo "======================================="
+  echo "  Service: $SERVICE"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  Cluster: $CLUSTER_NAME"
+  echo "  AWS Profile: $AWS_PROFILE"
+  echo "  AWS Region: $AWS_REGION"
+
+  # Check if cluster exists
+  if ! aws ecs describe-clusters --clusters "$CLUSTER_NAME" $PROFILE_FLAG $REGION_FLAG &>/dev/null; then
+    echo "Error: Cluster '$CLUSTER_NAME' not found"
+    exit 1
+  fi
+
+  # List available services
+  echo ""
+  echo "Available services:"
+  SERVICES=$(aws ecs list-services --cluster "$CLUSTER_NAME" $PROFILE_FLAG $REGION_FLAG --query 'serviceArns[*]' --output text)
+
+  if [[ -z "$SERVICES" ]]; then
+    echo "Error: No services found in cluster '$CLUSTER_NAME'"
+    exit 1
+  fi
+
+  SERVICE_NAMES=()
+  i=1
+  for service_arn in $SERVICES; do
+    service_name=$(basename "$service_arn")
+    SERVICE_NAMES+=("$service_name")
+    echo "  $i) $service_name"
+    ((i++))
+  done
+
+  echo ""
+  read -p "Select service number (1): " SERVICE_CHOICE
+  SERVICE_CHOICE=${SERVICE_CHOICE:-1}
+
+  if [[ "$SERVICE_CHOICE" -lt 1 || "$SERVICE_CHOICE" -gt ${#SERVICE_NAMES[@]} ]]; then
+    echo "Error: Invalid service selection"
+    exit 1
+  fi
+
+  SELECTED_SERVICE=${SERVICE_NAMES[$((SERVICE_CHOICE-1))]}
+  echo "Selected: $SELECTED_SERVICE"
+
+  # Get running tasks
+  TASKS=$(aws ecs list-tasks --cluster "$CLUSTER_NAME" --service-name "$SELECTED_SERVICE" $PROFILE_FLAG $REGION_FLAG --desired-status RUNNING --query 'taskArns[*]' --output text)
+
+  if [[ -z "$TASKS" ]]; then
+    echo "Error: No running tasks found for service '$SELECTED_SERVICE'"
+    exit 1
+  fi
+
+  TASK_ARNS=($TASKS)
+  if [[ ${#TASK_ARNS[@]} -gt 1 ]]; then
+    echo ""
+    echo "Multiple tasks found:"
+    for i in "${!TASK_ARNS[@]}"; do
+      task_id=$(basename "${TASK_ARNS[$i]}")
+      echo "  $((i+1))) $task_id"
+    done
+    read -p "Select task number (1): " TASK_CHOICE
+    TASK_CHOICE=${TASK_CHOICE:-1}
+    SELECTED_TASK=${TASK_ARNS[$((TASK_CHOICE-1))]}
+  else
+    SELECTED_TASK=${TASK_ARNS[0]}
+  fi
+
+  TASK_ID=$(basename "$SELECTED_TASK")
+  echo "Selected task: $TASK_ID"
+
+  # Get container name
+  TASK_DEF=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$SELECTED_TASK" $PROFILE_FLAG $REGION_FLAG --query 'tasks[0].taskDefinitionArn' --output text)
+  CONTAINER_NAME=$(aws ecs describe-task-definition --task-definition "$TASK_DEF" $PROFILE_FLAG $REGION_FLAG --query 'taskDefinition.containerDefinitions[0].name' --output text)
+  echo "Container: $CONTAINER_NAME"
+
+  # Parse command choice
+  case $COMMAND_CHOICE in
+    bash)       COMMAND="/bin/bash" ;;
+    sh)         COMMAND="/bin/sh" ;;
+    django)     COMMAND="python manage.py shell" ;;
+    dbshell)    COMMAND="python manage.py dbshell" ;;
+    *)          COMMAND="$COMMAND_CHOICE" ;;
+  esac
+
+  echo ""
+  echo "Connecting... (command: $COMMAND)"
+  echo "Type 'exit' to disconnect"
+  echo "===================="
+
+  aws ecs execute-command \
+    --cluster "$CLUSTER_NAME" \
+    --task "$TASK_ID" \
+    --container "$CONTAINER_NAME" \
+    --interactive \
+    --command "$COMMAND" \
+    $PROFILE_FLAG $REGION_FLAG
+
+# Stream CloudWatch logs from ECS services
+[group('aws-terraform')]
+aws-stream-logs service environment='development' profile='default' region='us-east-1' stream_type='a' filter='' duration='5m':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+  STREAM_TYPE="{{stream_type}}"
+  FILTER_PATTERN="{{filter}}"
+  START_TIME="{{duration}}"
+
+  PROFILE_FLAG=""
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    PROFILE_FLAG="--profile $AWS_PROFILE"
+  fi
+  REGION_FLAG="--region $AWS_REGION"
+
+  LOG_GROUP="/ecs/${SERVICE}/${ENVIRONMENT}"
+
+  echo "ECS Logs Streaming"
+  echo "============================================="
+  echo "  Service: $SERVICE"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  Log Group: $LOG_GROUP"
+  echo "  AWS Profile: $AWS_PROFILE"
+  echo "  AWS Region: $AWS_REGION"
+
+  # Check if log group exists
+  if ! aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" $PROFILE_FLAG $REGION_FLAG --query 'logGroups[?logGroupName==`'"$LOG_GROUP"'`]' --output text | grep -q "$LOG_GROUP"; then
+    echo "Error: Log group '$LOG_GROUP' not found"
+    echo "Tip: Make sure your service is deployed and running"
+    exit 1
+  fi
+
+  # Get available log streams
+  STREAMS=$(aws logs describe-log-streams \
+    --log-group-name "$LOG_GROUP" \
+    --order-by LastEventTime \
+    --descending \
+    --max-items 20 \
+    $PROFILE_FLAG $REGION_FLAG \
+    --query 'logStreams[*].logStreamName' \
+    --output text)
+
+  if [[ -z "$STREAMS" ]]; then
+    echo "Error: No log streams found in '$LOG_GROUP'"
+    exit 1
+  fi
+
+  # Categorize streams
+  SERVER_STREAMS=()
+  WORKER_STREAMS=()
+  OTHER_STREAMS=()
+
+  i=1
+  for stream in $STREAMS; do
+    if [[ "$stream" =~ server- ]]; then
+      SERVER_STREAMS+=("$stream")
+      echo "  $i) [SERVER] $stream"
+    elif [[ "$stream" =~ worker- ]]; then
+      WORKER_STREAMS+=("$stream")
+      echo "  $i) [WORKER] $stream"
+    else
+      OTHER_STREAMS+=("$stream")
+      echo "  $i) [OTHER] $stream"
+    fi
+    ((i++))
+  done
+
+  ALL_STREAMS=("${SERVER_STREAMS[@]}" "${WORKER_STREAMS[@]}" "${OTHER_STREAMS[@]}")
+
+  SELECTED_STREAMS=()
+  case $STREAM_TYPE in
+    a|A)  SELECTED_STREAMS=("${SERVER_STREAMS[@]}"); echo "Streaming all server logs" ;;
+    w|W)  SELECTED_STREAMS=("${WORKER_STREAMS[@]}"); echo "Streaming all worker logs" ;;
+    '*')  SELECTED_STREAMS=("${ALL_STREAMS[@]}"); echo "Streaming all logs" ;;
+    *)
+      if [[ "$STREAM_TYPE" =~ ^[0-9]+$ ]] && [[ "$STREAM_TYPE" -ge 1 ]] && [[ "$STREAM_TYPE" -le ${#ALL_STREAMS[@]} ]]; then
+        SELECTED_STREAMS=("${ALL_STREAMS[$((STREAM_TYPE-1))]}")
+        echo "Streaming: ${ALL_STREAMS[$((STREAM_TYPE-1))]}"
+      else
+        echo "Error: Invalid stream selection"
+        exit 1
+      fi
+      ;;
+  esac
+
+  if [[ ${#SELECTED_STREAMS[@]} -eq 0 ]]; then
+    echo "Error: No streams selected"
+    exit 1
+  fi
+
+  # Validate duration format
+  if [[ ! "$START_TIME" =~ ^[0-9]+[mh]$ ]]; then
+    echo "Error: Invalid duration format. Use '30m' or '2h'"
+    exit 1
+  fi
+
+  # Build filter command
+  FILTER_CMD="aws logs filter-log-events --log-group-name \"$LOG_GROUP\" --start-time \$(date -v-${START_TIME} +%s)000 $PROFILE_FLAG $REGION_FLAG"
+
+  if [[ -n "$FILTER_PATTERN" ]]; then
+    FILTER_CMD="$FILTER_CMD --filter-pattern \"$FILTER_PATTERN\""
+  fi
+
+  if [[ ${#SELECTED_STREAMS[@]} -lt ${#ALL_STREAMS[@]} ]]; then
+    STREAM_NAMES=$(IFS=' '; echo "${SELECTED_STREAMS[*]}")
+    FILTER_CMD="$FILTER_CMD --log-stream-names $STREAM_NAMES"
+  fi
+
+  echo ""
+  echo "Log Group: $LOG_GROUP"
+  echo "Streams: ${#SELECTED_STREAMS[@]} selected"
+  echo "Time Range: Last $START_TIME"
+  if [[ -n "$FILTER_PATTERN" ]]; then
+    echo "Filter: $FILTER_PATTERN"
+  fi
+  echo ""
+  echo "Press Ctrl+C to stop streaming"
+  echo "===================="
+
+  # Stream logs with continuous updates
+  LAST_SEEN=""
+  while true; do
+    CMD="$FILTER_CMD --output json"
+    if [[ -n "$LAST_SEEN" ]]; then
+      CMD="$CMD --next-token $LAST_SEEN"
+    fi
+
+    RESPONSE=$(eval "$CMD" 2>/dev/null || echo '{"events":[],"nextToken":null}')
+    EVENTS=$(echo "$RESPONSE" | jq -c '.events[]?' 2>/dev/null)
+    NEXT_TOKEN=$(echo "$RESPONSE" | jq -r '.nextToken // empty' 2>/dev/null)
+
+    if [[ -n "$EVENTS" ]]; then
+      while IFS= read -r event; do
+        if [[ -n "$event" ]]; then
+          timestamp=$(echo "$event" | jq -r '.timestamp // empty')
+          message=$(echo "$event" | jq -r '.message // empty')
+          stream=$(echo "$event" | jq -r '.logStreamName // empty')
+          if [[ -n "$timestamp" && -n "$message" ]]; then
+            formatted_time=$(date -r "$((timestamp/1000))" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$timestamp")
+            stream_short=$(basename "$stream")
+            echo "[$formatted_time] [$stream_short] $message"
+          fi
+        fi
+      done <<< "$EVENTS"
+    fi
+
+    if [[ -n "$NEXT_TOKEN" && "$NEXT_TOKEN" != "null" ]]; then
+      LAST_SEEN="$NEXT_TOKEN"
+    fi
+
+    sleep 2
+  done
+
+# Create S3 bucket and DynamoDB table for Terraform remote state backend
+[group('aws-terraform')]
+aws-tf-setup-backend service profile='default':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  AWS_PROFILE="{{profile}}"
+
+  PROFILE_FLAG=""
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    PROFILE_FLAG="--profile $AWS_PROFILE"
+  fi
+
+  # Check AWS CLI
+  if ! command -v aws &> /dev/null; then
+    echo "Error: AWS CLI not found. Please install AWS CLI first."
+    exit 1
+  fi
+
+  if ! aws sts get-caller-identity $PROFILE_FLAG &> /dev/null; then
+    echo "Error: AWS CLI not configured for profile '$AWS_PROFILE'. Run 'aws configure --profile $AWS_PROFILE' first."
+    exit 1
+  fi
+
+  echo "AWS CLI configured for profile: $AWS_PROFILE"
+
+  # Get AWS account info
+  AWS_ACCOUNT_ID=$(aws sts get-caller-identity $PROFILE_FLAG --query Account --output text)
+  AWS_REGION=$(aws configure get region $PROFILE_FLAG 2>/dev/null || echo "us-east-1")
+
+  echo ""
+  echo "Terraform S3 Backend Setup"
+  echo "=========================="
+  echo "  Service: $SERVICE"
+  echo "  Profile: $AWS_PROFILE"
+  echo "  Account ID: $AWS_ACCOUNT_ID"
+  echo "  Region: $AWS_REGION"
+
+  # Generate standard names
+  BUCKET_NAME="${AWS_ACCOUNT_ID}-${SERVICE}-terraform-state"
+  TABLE_NAME="${SERVICE}-terraform-state-lock"
+
+  echo ""
+  echo "Resources to create:"
+  echo "  S3 Bucket: $BUCKET_NAME"
+  echo "  DynamoDB Table: $TABLE_NAME"
+  echo ""
+
+  echo -n "Proceed? (y/N): "
+  read confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "Cancelled"
+    exit 0
+  fi
+
+  # Create S3 bucket (idempotent)
+  echo ""
+  echo "Creating S3 bucket: $BUCKET_NAME"
+  if aws s3api head-bucket --bucket "$BUCKET_NAME" --region "$AWS_REGION" $PROFILE_FLAG 2>/dev/null; then
+    echo "S3 bucket '$BUCKET_NAME' already exists"
+  else
+    if [[ "$AWS_REGION" == "us-east-1" ]]; then
+      aws s3api create-bucket --bucket "$BUCKET_NAME" --region "$AWS_REGION" $PROFILE_FLAG
+    else
+      aws s3api create-bucket --bucket "$BUCKET_NAME" --region "$AWS_REGION" \
+        --create-bucket-configuration LocationConstraint="$AWS_REGION" $PROFILE_FLAG
+    fi
+
+    aws s3api put-bucket-versioning --bucket "$BUCKET_NAME" \
+      --versioning-configuration Status=Enabled $PROFILE_FLAG
+
+    aws s3api put-bucket-encryption --bucket "$BUCKET_NAME" \
+      --server-side-encryption-configuration '{
+        "Rules": [{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]
+      }' $PROFILE_FLAG
+
+    aws s3api put-public-access-block --bucket "$BUCKET_NAME" \
+      --public-access-block-configuration \
+      BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true \
+      $PROFILE_FLAG
+
+    echo "S3 bucket created with versioning, encryption, and public access blocked"
+  fi
+
+  # Create DynamoDB table (idempotent)
+  echo ""
+  echo "Creating DynamoDB table: $TABLE_NAME"
+  if aws dynamodb describe-table --table-name "$TABLE_NAME" --region "$AWS_REGION" $PROFILE_FLAG 2>/dev/null; then
+    echo "DynamoDB table '$TABLE_NAME' already exists"
+  else
+    aws dynamodb create-table \
+      --table-name "$TABLE_NAME" \
+      --attribute-definitions AttributeName=LockID,AttributeType=S \
+      --key-schema AttributeName=LockID,KeyType=HASH \
+      --billing-mode PAY_PER_REQUEST \
+      --region "$AWS_REGION" $PROFILE_FLAG
+
+    echo "Waiting for DynamoDB table to be active..."
+    aws dynamodb wait table-exists --table-name "$TABLE_NAME" --region "$AWS_REGION" $PROFILE_FLAG
+    echo "DynamoDB table created"
+  fi
+
+  echo ""
+  echo "Backend setup complete!"
+  echo "  S3 Bucket: $BUCKET_NAME"
+  echo "  DynamoDB Table: $TABLE_NAME"
+  echo "  Region: $AWS_REGION"
+  echo ""
+  echo "Next: run 'tn aws-tf-init-backend $SERVICE <environment>' to initialize Terraform"
+
+# Initialize Terraform with the correct backend configuration for an environment
+[group('aws-terraform')]
+aws-tf-init-backend service environment='development' profile='default' region='us-east-1' force='false':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+  FORCE="{{force}}"
+
+  PROFILE_FLAG=""
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    PROFILE_FLAG="--profile $AWS_PROFILE"
+  fi
+
+  # Get AWS account ID
+  AWS_ACCOUNT_ID=$(aws sts get-caller-identity $PROFILE_FLAG --query Account --output text)
+
+  # Derive backend resource names (must match setup-backend convention)
+  BUCKET="${AWS_ACCOUNT_ID}-${SERVICE}-terraform-state"
+  TABLE="${SERVICE}-terraform-state-lock"
+  STATE_KEY="${ENVIRONMENT}/terraform.tfstate"
+
+  echo "Terraform Backend Initialization"
+  echo "=================================="
+  echo "  Service: $SERVICE"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  AWS Profile: $AWS_PROFILE"
+  echo "  State Key: $STATE_KEY"
+  echo "  S3 Bucket: $BUCKET"
+  echo "  DynamoDB Table: $TABLE"
+  echo "  Region: $AWS_REGION"
+  echo ""
+
+  # Test AWS access
+  echo "Testing AWS access..."
+  AWS_IDENTITY=$(aws sts get-caller-identity $PROFILE_FLAG 2>/dev/null || echo "FAILED")
+  if [[ "$AWS_IDENTITY" == "FAILED" ]]; then
+    echo "Error: Failed to get AWS caller identity"
+    exit 1
+  fi
+  echo "AWS Identity verified: $(echo "$AWS_IDENTITY" | jq -r '.Arn')"
+
+  # Test DynamoDB table access
+  echo "Testing DynamoDB table access..."
+  if aws dynamodb describe-table --table-name "$TABLE" --region "$AWS_REGION" $PROFILE_FLAG &>/dev/null; then
+    echo "DynamoDB table accessible: $TABLE"
+  else
+    echo "Error: DynamoDB table not accessible: $TABLE"
+    echo "Tip: Run 'tn aws-tf-setup-backend $SERVICE' first"
+    exit 1
+  fi
+
+  # Build backend config args
+  BACKEND_ARGS="-backend-config=\"bucket=${BUCKET}\""
+  BACKEND_ARGS+=" -backend-config=\"key=${STATE_KEY}\""
+  BACKEND_ARGS+=" -backend-config=\"region=${AWS_REGION}\""
+  BACKEND_ARGS+=" -backend-config=\"dynamodb_table=${TABLE}\""
+  BACKEND_ARGS+=" -backend-config=\"encrypt=true\""
+
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    BACKEND_ARGS+=" -backend-config=\"profile=${AWS_PROFILE}\""
+  fi
+
+  if [[ "$FORCE" == "true" ]]; then
+    BACKEND_ARGS+=" -migrate-state"
+  fi
+
+  echo ""
+  echo "Running terraform init..."
+  eval "terraform init ${BACKEND_ARGS}"
+
+  echo ""
+  echo "Backend initialized!"
+  echo "  State Location: s3://${BUCKET}/${STATE_KEY}"
+  echo "  Lock Table: ${TABLE}"
+  echo "  Environment: ${ENVIRONMENT}"
+
+# Create GitHub Actions OIDC IAM role for a given org and environment
+[group('aws-terraform')]
+aws-setup-oidc github_org environment='development' secrets_bucket='' profile='default':
+  #!/usr/bin/env bash
+  set -e
+
+  GITHUB_ORG="{{github_org}}"
+  ENVIRONMENT="{{environment}}"
+  SECRETS_BUCKET="{{secrets_bucket}}"
+  AWS_PROFILE="{{profile}}"
+
+  if [[ -z "$GITHUB_ORG" ]]; then
+    echo "Error: github_org is required"
+    exit 1
+  fi
+
+  # Set up AWS command helper
+  run_aws() {
+    if [[ "$AWS_PROFILE" != "default" && -n "$AWS_PROFILE" ]]; then
+      aws --profile "$AWS_PROFILE" "$@"
+    else
+      aws "$@"
+    fi
+  }
+
+  ACCOUNT_ID=$(run_aws sts get-caller-identity --query Account --output text)
+  ROLE_NAME="github-actions-${ENVIRONMENT}"
+
+  echo "GitHub Actions OIDC Setup"
+  echo "========================="
+  echo "  GitHub Org: $GITHUB_ORG"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  AWS Account: $ACCOUNT_ID"
+  echo "  Role Name: $ROLE_NAME"
+  echo "  AWS Profile: $AWS_PROFILE"
+  if [[ -n "$SECRETS_BUCKET" ]]; then
+    echo "  Secrets Bucket: $SECRETS_BUCKET"
+  fi
+  echo ""
+
+  # 1. Create OIDC Identity Provider (idempotent)
+  echo "Creating OIDC Identity Provider..."
+  if run_aws iam get-open-id-connect-provider \
+    --open-id-connect-provider-arn "arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com" &>/dev/null; then
+    echo "OIDC provider already exists"
+  else
+    run_aws iam create-open-id-connect-provider \
+      --url https://token.actions.githubusercontent.com \
+      --client-id-list sts.amazonaws.com \
+      --thumbprint-list 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+    echo "OIDC provider created"
+  fi
+
+  # 2. Create or update IAM Role (idempotent)
+  echo ""
+  echo "Processing IAM Role: $ROLE_NAME"
+  if run_aws iam get-role --role-name "$ROLE_NAME" &>/dev/null; then
+    echo "Role $ROLE_NAME already exists"
+    # Check if GitHub org already in trust policy
+    TRUST_POLICY=$(run_aws iam get-role --role-name "$ROLE_NAME" --query 'Role.AssumeRolePolicyDocument' --output json)
+    if echo "$TRUST_POLICY" | grep -q "repo:${GITHUB_ORG}/"; then
+      echo "GitHub org '$GITHUB_ORG' already has access"
+    else
+      echo "Adding GitHub org '$GITHUB_ORG' to trust policy..."
+      echo "$TRUST_POLICY" | jq --arg org "$GITHUB_ORG" '
+        (.Statement[0].Condition.StringLike["token.actions.githubusercontent.com:sub"]) |=
+        if type == "string" then [., "repo:\($org)/*:*"]
+        elif type == "array" then . + ["repo:\($org)/*:*"]
+        else "repo:\($org)/*:*"
+        end
+      ' > /tmp/oidc-trust-policy.json
+      run_aws iam update-assume-role-policy --role-name "$ROLE_NAME" \
+        --policy-document file:///tmp/oidc-trust-policy.json
+      rm -f /tmp/oidc-trust-policy.json
+      echo "Trust policy updated"
+    fi
+  else
+    jq -n --arg account "$ACCOUNT_ID" --arg org "$GITHUB_ORG" '{
+      Version: "2012-10-17",
+      Statement: [{
+        Effect: "Allow",
+        Principal: { Federated: "arn:aws:iam::\($account):oidc-provider/token.actions.githubusercontent.com" },
+        Action: "sts:AssumeRoleWithWebIdentity",
+        Condition: {
+          StringEquals: { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+          StringLike: { "token.actions.githubusercontent.com:sub": "repo:\($org)/*:*" }
+        }
+      }]
+    }' > /tmp/oidc-trust-policy.json
+    run_aws iam create-role --role-name "$ROLE_NAME" \
+      --assume-role-policy-document file:///tmp/oidc-trust-policy.json
+    rm -f /tmp/oidc-trust-policy.json
+    echo "IAM role created: $ROLE_NAME"
+  fi
+
+  # 3. Create and attach deployment policy (idempotent)
+  echo ""
+  echo "Creating deployment policy..."
+  POLICY_NAME="${ROLE_NAME}-deployment-policy"
+  POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}"
+
+  jq -n '{
+    Version: "2012-10-17",
+    Statement: [
+      {Sid: "ECRFullAccess", Effect: "Allow", Action: ["ecr:*"], Resource: "*"},
+      {Sid: "ECSFullAccess", Effect: "Allow", Action: ["ecs:*"], Resource: "*"},
+      {Sid: "VPCAccess", Effect: "Allow", Action: ["ec2:Describe*","ec2:CreateVpc","ec2:DeleteVpc","ec2:ModifyVpcAttribute","ec2:CreateSubnet","ec2:DeleteSubnet","ec2:ModifySubnetAttribute","ec2:CreateInternetGateway","ec2:DeleteInternetGateway","ec2:AttachInternetGateway","ec2:DetachInternetGateway","ec2:CreateRouteTable","ec2:DeleteRouteTable","ec2:CreateRoute","ec2:DeleteRoute","ec2:AssociateRouteTable","ec2:DisassociateRouteTable","ec2:CreateSecurityGroup","ec2:DeleteSecurityGroup","ec2:AuthorizeSecurityGroupIngress","ec2:AuthorizeSecurityGroupEgress","ec2:RevokeSecurityGroupIngress","ec2:RevokeSecurityGroupEgress","ec2:CreateTags","ec2:DeleteTags"], Resource: "*"},
+      {Sid: "RDSAccess", Effect: "Allow", Action: ["rds:*"], Resource: "*"},
+      {Sid: "ACMAccess", Effect: "Allow", Action: ["acm:*"], Resource: "*"},
+      {Sid: "IAMAccess", Effect: "Allow", Action: ["iam:*"], Resource: "*"},
+      {Sid: "SecretsManagerAccess", Effect: "Allow", Action: ["secretsmanager:*"], Resource: "*"},
+      {Sid: "CloudWatchLogsAccess", Effect: "Allow", Action: ["logs:*"], Resource: "*"},
+      {Sid: "S3FullAccess", Effect: "Allow", Action: ["s3:*"], Resource: "*"},
+      {Sid: "DynamoDBAccess", Effect: "Allow", Action: ["dynamodb:*"], Resource: "*"},
+      {Sid: "ELBAccess", Effect: "Allow", Action: ["elasticloadbalancing:*"], Resource: "*"},
+      {Sid: "ElastiCacheAccess", Effect: "Allow", Action: ["elasticache:*"], Resource: "*"},
+      {Sid: "Route53Access", Effect: "Allow", Action: ["route53:*"], Resource: "*"},
+      {Sid: "EventBridgeAccess", Effect: "Allow", Action: ["events:*"], Resource: "*"},
+      {Sid: "STSAccess", Effect: "Allow", Action: ["sts:GetCallerIdentity"], Resource: "*"}
+    ]
+  }' > /tmp/oidc-deploy-policy.json
+
+  # Delete existing policy if it exists (idempotent)
+  if run_aws iam get-policy --policy-arn "$POLICY_ARN" &>/dev/null; then
+    run_aws iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$POLICY_ARN" 2>/dev/null || true
+    run_aws iam list-policy-versions --policy-arn "$POLICY_ARN" \
+      --query 'Versions[?!IsDefaultVersion].[VersionId]' --output text | while read version; do
+      run_aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$version" 2>/dev/null || true
+    done
+    run_aws iam delete-policy --policy-arn "$POLICY_ARN" 2>/dev/null || true
+  fi
+
+  run_aws iam create-policy --policy-name "$POLICY_NAME" \
+    --policy-document file:///tmp/oidc-deploy-policy.json
+  run_aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn "$POLICY_ARN"
+  rm -f /tmp/oidc-deploy-policy.json
+  echo "Deployment policy attached"
+
+  # 4. Create secrets policy if secrets_bucket provided (idempotent)
+  if [[ -n "$SECRETS_BUCKET" ]]; then
+    echo ""
+    echo "Creating S3 secrets policy..."
+    SECRETS_POLICY_NAME="${ROLE_NAME}-secrets-access"
+    SECRETS_POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${SECRETS_POLICY_NAME}"
+
+    jq -n --arg bucket "$SECRETS_BUCKET" --arg env "$ENVIRONMENT" '{
+      Version: "2012-10-17",
+      Statement: [
+        {Sid: "SecretsS3Access", Effect: "Allow", Action: ["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:GetObjectVersion"], Resource: ["arn:aws:s3:::\($bucket)/\($env)/*"]},
+        {Sid: "AllowListBucketForEnv", Effect: "Allow", Action: "s3:ListBucket", Resource: "arn:aws:s3:::\($bucket)", Condition: {StringLike: {"s3:prefix": "\($env)/*"}}},
+        {Sid: "AllowListBuckets", Effect: "Allow", Action: "s3:ListAllMyBuckets", Resource: "*"}
+      ]
+    }' > /tmp/oidc-secrets-policy.json
+
+    if run_aws iam get-policy --policy-arn "$SECRETS_POLICY_ARN" &>/dev/null; then
+      run_aws iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$SECRETS_POLICY_ARN" 2>/dev/null || true
+      run_aws iam list-policy-versions --policy-arn "$SECRETS_POLICY_ARN" \
+        --query 'Versions[?!IsDefaultVersion].[VersionId]' --output text | while read version; do
+        run_aws iam delete-policy-version --policy-arn "$SECRETS_POLICY_ARN" --version-id "$version" 2>/dev/null || true
+      done
+      run_aws iam delete-policy --policy-arn "$SECRETS_POLICY_ARN" 2>/dev/null || true
+    fi
+
+    run_aws iam create-policy --policy-name "$SECRETS_POLICY_NAME" \
+      --policy-document file:///tmp/oidc-secrets-policy.json
+    run_aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn "$SECRETS_POLICY_ARN"
+    rm -f /tmp/oidc-secrets-policy.json
+    echo "Secrets policy attached"
+  fi
+
+  # Summary
+  ROLE_ARN=$(run_aws iam get-role --role-name "$ROLE_NAME" --query Role.Arn --output text)
+  echo ""
+  echo "Setup complete!"
+  echo "  Role ARN: $ROLE_ARN"
+  echo ""
+  echo "Next steps:"
+  echo "  1. In GitHub repo Settings > Secrets and variables > Actions > Variables"
+  echo "  2. Add: $(echo $ENVIRONMENT | tr '[:lower:]' '[:upper:]')_AWS_ROLE_ARN = $ROLE_ARN"
+
+# Create S3 bucket for secrets storage with proper security
+[group('aws-terraform')]
+aws-setup-secrets service environment profile='default' region='us-east-1':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+
+  PROFILE_FLAG=""
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    PROFILE_FLAG="--profile $AWS_PROFILE"
+  fi
+
+  AWS_ACCOUNT_ID=$(aws sts get-caller-identity $PROFILE_FLAG --query Account --output text)
+  SECRETS_BUCKET="${SERVICE}-terraform-secrets"
+
+  echo "S3 Secrets Bucket Setup"
+  echo "========================"
+  echo "  Service: $SERVICE"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  Account ID: $AWS_ACCOUNT_ID"
+  echo "  Region: $AWS_REGION"
+  echo "  Bucket: $SECRETS_BUCKET"
+  echo ""
+
+  # Create bucket (idempotent)
+  if aws s3api head-bucket --bucket "$SECRETS_BUCKET" $PROFILE_FLAG 2>/dev/null; then
+    echo "Bucket '$SECRETS_BUCKET' already exists"
+  else
+    echo "Creating S3 bucket: $SECRETS_BUCKET"
+    if [[ "$AWS_REGION" == "us-east-1" ]]; then
+      aws s3api create-bucket --bucket "$SECRETS_BUCKET" $PROFILE_FLAG
+    else
+      aws s3api create-bucket --bucket "$SECRETS_BUCKET" --region "$AWS_REGION" \
+        --create-bucket-configuration LocationConstraint="$AWS_REGION" $PROFILE_FLAG
+    fi
+
+    # Enable versioning
+    aws s3api put-bucket-versioning --bucket "$SECRETS_BUCKET" \
+      --versioning-configuration Status=Enabled $PROFILE_FLAG
+
+    # Enable encryption
+    aws s3api put-bucket-encryption --bucket "$SECRETS_BUCKET" \
+      --server-side-encryption-configuration '{
+        "Rules": [{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]
+      }' $PROFILE_FLAG
+
+    # Block public access
+    aws s3api put-public-access-block --bucket "$SECRETS_BUCKET" \
+      --public-access-block-configuration \
+      BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true \
+      $PROFILE_FLAG
+
+    echo "Bucket created with versioning, encryption, and public access blocked"
+  fi
+
+  # Create/update bucket policy for OIDC role access (idempotent)
+  ROLE_NAME="github-actions-${ENVIRONMENT}"
+  ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}"
+
+  echo ""
+  echo "Setting bucket policy for role: $ROLE_NAME"
+
+  # Get existing policy or start fresh
+  EXISTING_POLICY=$(aws s3api get-bucket-policy --bucket "$SECRETS_BUCKET" --query 'Policy' --output text $PROFILE_FLAG 2>/dev/null || echo "")
+
+  if [[ -n "$EXISTING_POLICY" ]]; then
+    BASE_POLICY="$EXISTING_POLICY"
+  else
+    BASE_POLICY='{"Version":"2012-10-17","Statement":[]}'
+  fi
+
+  echo "$BASE_POLICY" | jq \
+    --arg env "$ENVIRONMENT" \
+    --arg role "$ROLE_ARN" \
+    --arg bucket "$SECRETS_BUCKET" \
+    --arg region "$AWS_REGION" '
+    .Statement = [.Statement[] | select(.Principal.AWS != $role)] +
+    [
+      {
+        Sid: "AllowAccess\($env)",
+        Effect: "Allow",
+        Principal: {AWS: $role},
+        Action: ["s3:GetObject","s3:PutObject","s3:DeleteObject"],
+        Resource: ["arn:aws:s3:::\($bucket)/\($env)/*"],
+        Condition: {StringEquals: {"aws:RequestedRegion": $region}}
+      },
+      {
+        Sid: "AllowList\($env)",
+        Effect: "Allow",
+        Principal: {AWS: $role},
+        Action: ["s3:ListBucket"],
+        Resource: ["arn:aws:s3:::\($bucket)"],
+        Condition: {StringEquals: {"aws:RequestedRegion": $region}, StringLike: {"s3:prefix": "\($env)/*"}}
+      }
+    ]
+  ' > /tmp/secrets-bucket-policy.json
+  aws s3api put-bucket-policy --bucket "$SECRETS_BUCKET" \
+    --policy file:///tmp/secrets-bucket-policy.json $PROFILE_FLAG
+  rm -f /tmp/secrets-bucket-policy.json
+
+  echo "Bucket policy updated for environment: $ENVIRONMENT"
+  echo ""
+  echo "Secrets bucket setup complete!"
+  echo "  Bucket: $SECRETS_BUCKET"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  Role: $ROLE_NAME"
+
+#
 # TN Models Helpers
 #
 # TODO: Support output, e.g. `-o somepath.json`
