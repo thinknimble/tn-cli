@@ -477,6 +477,17 @@ aws-tf-init-backend service environment='development' profile='default' region='
     exit 1
   fi
 
+  # Generate backend.hcl for CI (idempotent — same values for all environments)
+  BACKEND_HCL="terraform/backend.hcl"
+  if [[ ! -f "$BACKEND_HCL" ]]; then
+    echo "Generating $BACKEND_HCL for CI..."
+    printf 'bucket         = "%s"\nregion         = "%s"\ndynamodb_table = "%s"\nencrypt        = true\n' \
+      "$BUCKET" "$AWS_REGION" "$TABLE" > "$BACKEND_HCL"
+    echo "Created $BACKEND_HCL — commit this file to your repo"
+  else
+    echo "Backend config already exists: $BACKEND_HCL"
+  fi
+
   # Build backend config args
   BACKEND_ARGS="-backend-config=\"bucket=${BUCKET}\""
   BACKEND_ARGS+=" -backend-config=\"key=${STATE_KEY}\""
