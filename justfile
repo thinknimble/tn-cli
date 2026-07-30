@@ -708,6 +708,119 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
   echo "  \"role_arn\": \"$ROLE_ARN\""
   echo ""
   echo "Set it under the '$ENVIRONMENT' key alongside account_id, secrets_bucket, and region."
+# Create IAM group + read-only CloudWatch Logs policy for a project.
+# Lets team members view logs without full AWS admin access.
+[group('aws-terraform')]
+aws-setup-log-viewer service profile='default' region='us-east-1':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+
+  if [[ -z "$SERVICE" ]]; then
+    echo "Error: service is required (e.g., 'my-project')"
+    exit 1
+  fi
+
+  # Set up AWS command helper
+  run_aws() {
+    if [[ "$AWS_PROFILE" != "default" && -n "$AWS_PROFILE" ]]; then
+      aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+    else
+      aws --region "$AWS_REGION" "$@"
+    fi
+  }
+
+  ACCOUNT_ID=$(run_aws sts get-caller-identity --query Account --output text)
+  POLICY_NAME="${SERVICE}-log-viewer"
+  POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}"
+  GROUP_NAME="${SERVICE}-log-viewers"
+
+  echo "CloudWatch Log Viewer Setup"
+  echo "==========================="
+  echo "  Service: $SERVICE"
+  echo "  AWS Account: $ACCOUNT_ID"
+  echo "  AWS Region: $AWS_REGION"
+  echo "  Policy: $POLICY_NAME"
+  echo "  Group: $GROUP_NAME"
+  echo "  Log Scope: /ecs/${SERVICE}/*"
+  echo ""
+
+  # 1. Create or update IAM policy (idempotent — delete + recreate)
+  echo "Creating log viewer policy..."
+  LOG_GROUP_ARN="arn:aws:logs:${AWS_REGION}:${ACCOUNT_ID}:log-group:/ecs/${SERVICE}/*"
+
+  jq -n --arg lg_arn "$LOG_GROUP_ARN" '{
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "DescribeLogGroups",
+        Effect: "Allow",
+        Action: ["logs:DescribeLogGroups"],
+        Resource: "*"
+      },
+      {
+        Sid: "ReadLogStreams",
+        Effect: "Allow",
+        Action: [
+          "logs:DescribeLogStreams",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents",
+          "logs:StartQuery",
+          "logs:GetQueryResults",
+          "logs:StopQuery"
+        ],
+        Resource: $lg_arn
+      }
+    ]
+  }' > /tmp/log-viewer-policy.json
+
+  if run_aws iam get-policy --policy-arn "$POLICY_ARN" &>/dev/null; then
+    echo "Policy already exists, updating..."
+    # Detach from group before deleting
+    run_aws iam detach-group-policy --group-name "$GROUP_NAME" --policy-arn "$POLICY_ARN" 2>/dev/null || true
+    # Clean up non-default versions
+    run_aws iam list-policy-versions --policy-arn "$POLICY_ARN" \
+      --query 'Versions[?!IsDefaultVersion].[VersionId]' --output text | while read version; do
+      run_aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$version" 2>/dev/null || true
+    done
+    run_aws iam delete-policy --policy-arn "$POLICY_ARN" 2>/dev/null || true
+  fi
+
+  run_aws iam create-policy --policy-name "$POLICY_NAME" \
+    --policy-document file:///tmp/log-viewer-policy.json --output text --query 'Policy.Arn'
+  rm -f /tmp/log-viewer-policy.json
+  echo "Policy created: $POLICY_NAME"
+
+  # 2. Create IAM group (idempotent)
+  echo ""
+  echo "Creating log viewer group..."
+  if run_aws iam get-group --group-name "$GROUP_NAME" &>/dev/null; then
+    echo "Group already exists: $GROUP_NAME"
+  else
+    run_aws iam create-group --group-name "$GROUP_NAME"
+    echo "Group created: $GROUP_NAME"
+  fi
+
+  # 3. Attach policy to group
+  run_aws iam attach-group-policy --group-name "$GROUP_NAME" --policy-arn "$POLICY_ARN"
+  echo "Policy attached to group"
+
+  # Summary
+  echo ""
+  echo "Setup complete!"
+  echo ""
+  echo "Add a user to the group:"
+  echo "  aws iam add-user-to-group --group-name $GROUP_NAME --user-name <username>"
+  echo ""
+  echo "Remove a user from the group:"
+  echo "  aws iam remove-user-from-group --group-name $GROUP_NAME --user-name <username>"
+  echo ""
+  echo "Users in this group can view CloudWatch logs under /ecs/${SERVICE}/*"
+  echo "using the AWS Console or the tn CLI:"
+  echo "  tn aws-stream-logs $SERVICE <environment>"
 # Create S3 bucket for secrets storage with proper security
 [group('aws-terraform')]
 aws-setup-secrets service environment profile='default' region='us-east-1':
