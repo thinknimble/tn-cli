@@ -445,7 +445,9 @@ aws-tf-init-backend service environment='development' profile='default' region='
   # Derive backend resource names (must match setup-backend convention)
   BUCKET="${AWS_ACCOUNT_ID}-${SERVICE}-terraform-state"
   TABLE="${SERVICE}-terraform-state-lock"
-  STATE_KEY="${ENVIRONMENT}/terraform.tfstate"
+  # Use a static key — workspaces handle environment isolation
+  # (Terraform stores state at env:/<workspace>/terraform.tfstate)
+  STATE_KEY="terraform.tfstate"
 
   echo "Terraform Backend Initialization"
   echo "=================================="
@@ -513,6 +515,183 @@ aws-tf-init-backend service environment='development' profile='default' region='
   echo "  State Location: s3://${BUCKET}/${STATE_KEY}"
   echo "  Lock Table: ${TABLE}"
   echo "  Environment: ${ENVIRONMENT}"
+# Delete orphaned AWS resources from a failed Terraform apply.
+# Finds resources by naming convention ({service}-{environment}) and deletes them.
+# Safe for fresh environments with no user data.
+[group('aws-terraform')]
+aws-tf-cleanup service environment profile='default' region='us-east-1' dry_run='true':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+  DRY_RUN="{{dry_run}}"
+
+  run_aws() {
+    if [[ "$AWS_PROFILE" != "default" && -n "$AWS_PROFILE" ]]; then
+      aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+    else
+      aws --region "$AWS_REGION" "$@"
+    fi
+  }
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "🔍 DRY RUN — showing what would be deleted (pass dry_run=false to delete)"
+  else
+    echo "⚠️  DESTRUCTIVE — deleting orphaned resources for ${SERVICE}-${ENVIRONMENT}"
+  fi
+  echo ""
+
+  FOUND=0
+
+  # 1. ECS services and cluster
+  CLUSTER="cluster-${SERVICE}-${ENVIRONMENT}"
+  if run_aws ecs describe-clusters --clusters "$CLUSTER" --query 'clusters[?status==`ACTIVE`].clusterName' --output text 2>/dev/null | grep -q "$CLUSTER"; then
+    FOUND=$((FOUND+1))
+    echo "📦 ECS cluster: $CLUSTER"
+    # Stop services first
+    for SVC in $(run_aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns[]' --output text 2>/dev/null); do
+      SVC_NAME=$(basename "$SVC")
+      echo "   Service: $SVC_NAME"
+      if [[ "$DRY_RUN" == "false" ]]; then
+        run_aws ecs update-service --cluster "$CLUSTER" --service "$SVC_NAME" --desired-count 0 >/dev/null 2>&1 || true
+        run_aws ecs delete-service --cluster "$CLUSTER" --service "$SVC_NAME" --force >/dev/null 2>&1 || true
+        echo "   ✅ Deleted service: $SVC_NAME"
+      fi
+    done
+    if [[ "$DRY_RUN" == "false" ]]; then
+      run_aws ecs delete-cluster --cluster "$CLUSTER" >/dev/null 2>&1 || true
+      echo "   ✅ Deleted cluster: $CLUSTER"
+    fi
+  fi
+
+  # 2. ALB and listeners
+  ALB_ARN=$(run_aws elbv2 describe-load-balancers --query "LoadBalancers[?starts_with(LoadBalancerName, '${SERVICE}-${ENVIRONMENT}')].LoadBalancerArn" --output text 2>/dev/null || echo "")
+  if [[ -n "$ALB_ARN" && "$ALB_ARN" != "None" ]]; then
+    FOUND=$((FOUND+1))
+    ALB_NAME=$(run_aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" --query 'LoadBalancers[0].LoadBalancerName' --output text)
+    echo "⚖️  ALB: $ALB_NAME"
+    if [[ "$DRY_RUN" == "false" ]]; then
+      # Delete listeners first
+      for LISTENER in $(run_aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" --query 'Listeners[].ListenerArn' --output text 2>/dev/null); do
+        run_aws elbv2 delete-listener --listener-arn "$LISTENER" >/dev/null 2>&1 || true
+      done
+      run_aws elbv2 delete-load-balancer --load-balancer-arn "$ALB_ARN" >/dev/null 2>&1 || true
+      echo "   ✅ Deleted ALB: $ALB_NAME"
+    fi
+  fi
+
+  # 3. Target groups
+  for TG_ARN in $(run_aws elbv2 describe-target-groups --query "TargetGroups[?starts_with(TargetGroupName, 'http-${SERVICE}-${ENVIRONMENT}')].TargetGroupArn" --output text 2>/dev/null); do
+    if [[ -n "$TG_ARN" && "$TG_ARN" != "None" ]]; then
+      FOUND=$((FOUND+1))
+      TG_NAME=$(run_aws elbv2 describe-target-groups --target-group-arns "$TG_ARN" --query 'TargetGroups[0].TargetGroupName' --output text)
+      echo "🎯 Target group: $TG_NAME"
+      if [[ "$DRY_RUN" == "false" ]]; then
+        run_aws elbv2 delete-target-group --target-group-arn "$TG_ARN" >/dev/null 2>&1 || true
+        echo "   ✅ Deleted target group: $TG_NAME"
+      fi
+    fi
+  done
+
+  # 4. RDS instance
+  DB_ID="db-${SERVICE}-${ENVIRONMENT}"
+  if run_aws rds describe-db-instances --db-instance-identifier "$DB_ID" >/dev/null 2>&1; then
+    FOUND=$((FOUND+1))
+    echo "🗄️  RDS instance: $DB_ID"
+    if [[ "$DRY_RUN" == "false" ]]; then
+      run_aws rds delete-db-instance --db-instance-identifier "$DB_ID" --skip-final-snapshot --delete-automated-backups >/dev/null 2>&1 || true
+      echo "   ⏳ Deleting RDS (takes several minutes)..."
+    fi
+  fi
+
+  # 5. ElastiCache cluster
+  REDIS_ID="redis-${SERVICE}-${ENVIRONMENT}"
+  if run_aws elasticache describe-cache-clusters --cache-cluster-id "$REDIS_ID" >/dev/null 2>&1; then
+    FOUND=$((FOUND+1))
+    echo "🔴 ElastiCache cluster: $REDIS_ID"
+    if [[ "$DRY_RUN" == "false" ]]; then
+      run_aws elasticache delete-cache-cluster --cache-cluster-id "$REDIS_ID" >/dev/null 2>&1 || true
+      echo "   ⏳ Deleting ElastiCache (takes several minutes)..."
+    fi
+  fi
+
+  # 6. Security groups (delete last — other resources reference them)
+  VPC_ID=$(run_aws ec2 describe-vpcs --filters "Name=tag:Name,Values=*shared*dev*" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "")
+  if [[ -n "$VPC_ID" && "$VPC_ID" != "None" ]]; then
+    SG_PATTERNS=("ecs-lb-sg-${SERVICE}-${ENVIRONMENT}" "ecs-app-${SERVICE}-${ENVIRONMENT}" "rds-sg-${SERVICE}-${ENVIRONMENT}" "redis-sg-${SERVICE}-${ENVIRONMENT}")
+    for SG_NAME in "${SG_PATTERNS[@]}"; do
+      SG_ID=$(run_aws ec2 describe-security-groups --filters "Name=group-name,Values=${SG_NAME}" "Name=vpc-id,Values=${VPC_ID}" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "")
+      if [[ -n "$SG_ID" && "$SG_ID" != "None" ]]; then
+        FOUND=$((FOUND+1))
+        echo "🔒 Security group: $SG_NAME ($SG_ID)"
+        if [[ "$DRY_RUN" == "false" ]]; then
+          run_aws ec2 delete-security-group --group-id "$SG_ID" >/dev/null 2>&1 || echo "   ⚠️  Could not delete $SG_NAME (may have dependencies — retry after RDS/ElastiCache finish deleting)"
+          echo "   ✅ Deleted security group: $SG_NAME"
+        fi
+      fi
+    done
+  fi
+
+  # 7. DB subnet group
+  DB_SUBNET="db-subnet-${SERVICE}-${ENVIRONMENT}"
+  if run_aws rds describe-db-subnet-groups --db-subnet-group-name "$DB_SUBNET" >/dev/null 2>&1; then
+    FOUND=$((FOUND+1))
+    echo "🌐 DB subnet group: $DB_SUBNET"
+    if [[ "$DRY_RUN" == "false" ]]; then
+      run_aws rds delete-db-subnet-group --db-subnet-group-name "$DB_SUBNET" >/dev/null 2>&1 || echo "   ⚠️  Could not delete (RDS may still be deleting)"
+    fi
+  fi
+
+  # 8. ElastiCache subnet group
+  REDIS_SUBNET="redis-subnet-${SERVICE}-${ENVIRONMENT}"
+  if run_aws elasticache describe-cache-subnet-groups --cache-subnet-group-name "$REDIS_SUBNET" >/dev/null 2>&1; then
+    FOUND=$((FOUND+1))
+    echo "🌐 ElastiCache subnet group: $REDIS_SUBNET"
+    if [[ "$DRY_RUN" == "false" ]]; then
+      run_aws elasticache delete-cache-subnet-group --cache-subnet-group-name "$REDIS_SUBNET" >/dev/null 2>&1 || echo "   ⚠️  Could not delete (ElastiCache may still be deleting)"
+    fi
+  fi
+
+  # 9. CloudWatch log group
+  LOG_GROUP="/ecs/${SERVICE}/${ENVIRONMENT}"
+  if run_aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --query "logGroups[?logGroupName=='${LOG_GROUP}'].logGroupName" --output text 2>/dev/null | grep -q "$LOG_GROUP"; then
+    FOUND=$((FOUND+1))
+    echo "📝 Log group: $LOG_GROUP"
+    if [[ "$DRY_RUN" == "false" ]]; then
+      run_aws logs delete-log-group --log-group-name "$LOG_GROUP" >/dev/null 2>&1 || true
+      echo "   ✅ Deleted log group"
+    fi
+  fi
+
+  # 10. Secrets Manager secrets
+  for SECRET_NAME in $(run_aws secretsmanager list-secrets --filters "Key=name,Values=${SERVICE}-${ENVIRONMENT}" --query 'SecretList[].Name' --output text 2>/dev/null); do
+    if [[ -n "$SECRET_NAME" && "$SECRET_NAME" != "None" ]]; then
+      FOUND=$((FOUND+1))
+      echo "🔑 Secret: $SECRET_NAME"
+      if [[ "$DRY_RUN" == "false" ]]; then
+        run_aws secretsmanager delete-secret --secret-id "$SECRET_NAME" --force-delete-without-recovery >/dev/null 2>&1 || true
+        echo "   ✅ Deleted secret: $SECRET_NAME"
+      fi
+    fi
+  done
+
+  echo ""
+  if [[ $FOUND -eq 0 ]]; then
+    echo "✅ No orphaned resources found for ${SERVICE}-${ENVIRONMENT}"
+  elif [[ "$DRY_RUN" == "true" ]]; then
+    echo "Found $FOUND orphaned resource(s). Run with dry_run=false to delete:"
+    echo "  tn aws-tf-cleanup ${SERVICE} ${ENVIRONMENT} dry_run=false"
+    echo ""
+    echo "Note: Security groups may fail on first attempt if RDS/ElastiCache"
+    echo "are still deleting. Re-run after a few minutes to clean those up."
+  else
+    echo "🧹 Cleanup initiated for $FOUND resource(s)"
+    echo "RDS and ElastiCache take several minutes to fully delete."
+    echo "Re-run to clean up security groups and subnet groups after they finish."
+  fi
 # Create GitHub Actions OIDC IAM role for a given org and environment.
 # Can also be re-run to update an existing OIDC role with a new secrets bucket for a new project.
 [group('aws-terraform')]
