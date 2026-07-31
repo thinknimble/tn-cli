@@ -505,6 +505,7 @@ aws-tf-init-backend service environment='development' profile='default' region='
 
   echo ""
   echo "Running terraform init..."
+  cd terraform
   eval "terraform init ${BACKEND_ARGS}"
 
   echo ""
