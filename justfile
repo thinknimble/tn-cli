@@ -828,6 +828,7 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
       {Sid: "ElastiCacheAccess", Effect: "Allow", Action: ["elasticache:*"], Resource: "*"},
       {Sid: "Route53Access", Effect: "Allow", Action: ["route53:*"], Resource: "*"},
       {Sid: "EventBridgeAccess", Effect: "Allow", Action: ["events:*"], Resource: "*"},
+      {Sid: "SNSAccess", Effect: "Allow", Action: ["sns:*"], Resource: "*"},
       {Sid: "STSAccess", Effect: "Allow", Action: ["sts:GetCallerIdentity"], Resource: "*"}
     ]
   }' > /tmp/oidc-deploy-policy.json
