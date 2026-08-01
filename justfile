@@ -816,7 +816,7 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
     Statement: [
       {Sid: "ECRFullAccess", Effect: "Allow", Action: ["ecr:*"], Resource: "*"},
       {Sid: "ECSFullAccess", Effect: "Allow", Action: ["ecs:*"], Resource: "*"},
-      {Sid: "VPCAccess", Effect: "Allow", Action: ["ec2:Describe*","ec2:CreateVpc","ec2:DeleteVpc","ec2:ModifyVpcAttribute","ec2:CreateSubnet","ec2:DeleteSubnet","ec2:ModifySubnetAttribute","ec2:CreateInternetGateway","ec2:DeleteInternetGateway","ec2:AttachInternetGateway","ec2:DetachInternetGateway","ec2:CreateRouteTable","ec2:DeleteRouteTable","ec2:CreateRoute","ec2:DeleteRoute","ec2:AssociateRouteTable","ec2:DisassociateRouteTable","ec2:CreateSecurityGroup","ec2:DeleteSecurityGroup","ec2:AuthorizeSecurityGroupIngress","ec2:AuthorizeSecurityGroupEgress","ec2:RevokeSecurityGroupIngress","ec2:RevokeSecurityGroupEgress","ec2:CreateTags","ec2:DeleteTags"], Resource: "*"},
+      {Sid: "EC2Access", Effect: "Allow", Action: ["ec2:*"], Resource: "*"},
       {Sid: "RDSAccess", Effect: "Allow", Action: ["rds:*"], Resource: "*"},
       {Sid: "ACMAccess", Effect: "Allow", Action: ["acm:*"], Resource: "*"},
       {Sid: "IAMAccess", Effect: "Allow", Action: ["iam:*"], Resource: "*"},
@@ -829,6 +829,7 @@ aws-setup-oidc service github_org secrets_bucket environment='development' profi
       {Sid: "Route53Access", Effect: "Allow", Action: ["route53:*"], Resource: "*"},
       {Sid: "EventBridgeAccess", Effect: "Allow", Action: ["events:*"], Resource: "*"},
       {Sid: "SNSAccess", Effect: "Allow", Action: ["sns:*"], Resource: "*"},
+      {Sid: "CloudWatchAccess", Effect: "Allow", Action: ["cloudwatch:*"], Resource: "*"},
       {Sid: "STSAccess", Effect: "Allow", Action: ["sts:GetCallerIdentity"], Resource: "*"}
     ]
   }' > /tmp/oidc-deploy-policy.json
