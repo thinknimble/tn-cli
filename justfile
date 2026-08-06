@@ -1289,7 +1289,7 @@ aws-stream-logs service environment='development' profile='default' region='us-e
 
   i=1
   for stream in $STREAMS; do
-    if [[ "$stream" =~ server- ]]; then
+    if [[ "$stream" =~ (server|app)- ]]; then
       SERVER_STREAMS+=("$stream")
       echo "  $i) [SERVER] $stream"
     elif [[ "$stream" =~ worker- ]]; then
