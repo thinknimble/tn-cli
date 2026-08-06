@@ -1003,6 +1003,80 @@ aws-setup-log-viewer service profile='default' region='us-east-1':
   echo "Users in this group can view CloudWatch logs under /ecs/${SERVICE}/*"
   echo "using the AWS Console or the tn CLI:"
   echo "  tn aws-stream-logs $SERVICE <environment>"
+# Add an IAM user to a project's log-viewer group (creates the user if needed)
+[group('aws-terraform')]
+aws-add-log-viewer service username profile='default' region='us-east-1':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  USERNAME="{{username}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+
+  if [[ -z "$SERVICE" || -z "$USERNAME" ]]; then
+    echo "Error: service and username are required"
+    echo "Usage: tn aws-add-log-viewer <service> <username>"
+    exit 1
+  fi
+
+  run_aws() {
+    if [[ "$AWS_PROFILE" != "default" && -n "$AWS_PROFILE" ]]; then
+      aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+    else
+      aws --region "$AWS_REGION" "$@"
+    fi
+  }
+
+  GROUP_NAME="${SERVICE}-log-viewers"
+
+  # Verify the group exists
+  if ! run_aws iam get-group --group-name "$GROUP_NAME" &>/dev/null; then
+    echo "Error: Group '$GROUP_NAME' does not exist."
+    echo "Run 'tn aws-setup-log-viewer $SERVICE' first."
+    exit 1
+  fi
+
+  # Create IAM user if it doesn't exist
+  if run_aws iam get-user --user-name "$USERNAME" &>/dev/null; then
+    echo "User '$USERNAME' already exists"
+  else
+    echo "Creating IAM user '$USERNAME'..."
+    run_aws iam create-user --user-name "$USERNAME" --output text --query 'User.Arn'
+    echo "✅ User created"
+  fi
+
+  # Add to group
+  echo "Adding '$USERNAME' to group '$GROUP_NAME'..."
+  run_aws iam add-user-to-group --group-name "$GROUP_NAME" --user-name "$USERNAME"
+  echo "✅ Added to group"
+
+  # Generate access keys
+  echo ""
+  echo "Generating access keys..."
+  KEYS=$(run_aws iam create-access-key --user-name "$USERNAME" --output json)
+
+  ACCESS_KEY=$(echo "$KEYS" | jq -r '.AccessKey.AccessKeyId')
+  SECRET_KEY=$(echo "$KEYS" | jq -r '.AccessKey.SecretAccessKey')
+
+  echo ""
+  echo "============================================="
+  echo "  Credentials for $USERNAME"
+  echo "============================================="
+  echo ""
+  echo "Add this to ~/.aws/credentials:"
+  echo ""
+  echo "  [$SERVICE]"
+  echo "  aws_access_key_id = $ACCESS_KEY"
+  echo "  aws_secret_access_key = $SECRET_KEY"
+  echo ""
+  echo "Then use:"
+  echo "  tn aws-stream-logs $SERVICE <environment> $SERVICE $AWS_REGION"
+  echo "  tn aws-ecs-events $SERVICE <environment> $SERVICE $AWS_REGION"
+  echo ""
+  echo "⚠️  Save these credentials now — the secret key cannot be retrieved again."
+  echo "============================================="
+
 # Create S3 bucket for secrets storage with proper security
 [group('aws-terraform')]
 aws-setup-secrets service environment profile='default' region='us-east-1':
@@ -1387,6 +1461,102 @@ aws-stream-logs service environment='development' profile='default' region='us-e
 
     sleep 2
   done
+# Show ECS service events and stopped task diagnostics
+[group('aws-terraform')]
+aws-ecs-events service environment='development' profile='default' region='us-east-1' count='10':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+  COUNT="{{count}}"
+
+  CLUSTER="cluster-${SERVICE}-${ENVIRONMENT}"
+  ECS_SERVICE="service-app-${SERVICE}-${ENVIRONMENT}"
+
+  PROFILE_FLAG=""
+  if [[ "$AWS_PROFILE" != "default" ]]; then
+    PROFILE_FLAG="--profile $AWS_PROFILE"
+  fi
+  REGION_FLAG="--region $AWS_REGION"
+
+  echo ""
+  echo "ECS Diagnostics"
+  echo "============================================="
+  echo "  Cluster:  $CLUSTER"
+  echo "  Service:  $ECS_SERVICE"
+  echo "============================================="
+
+  # --- Service Events ---
+  echo ""
+  echo "📋 Recent Service Events (last $COUNT):"
+  echo "---------------------------------------------"
+  aws ecs describe-services \
+    --cluster "$CLUSTER" \
+    --services "$ECS_SERVICE" \
+    --query "services[0].events[:${COUNT}].[createdAt,message]" \
+    --output table \
+    $PROFILE_FLAG $REGION_FLAG 2>/dev/null || echo "  Could not fetch service events"
+
+  # --- Service Status ---
+  echo ""
+  echo "📊 Service Status:"
+  echo "---------------------------------------------"
+  aws ecs describe-services \
+    --cluster "$CLUSTER" \
+    --services "$ECS_SERVICE" \
+    --query 'services[0].{desiredCount:desiredCount,runningCount:runningCount,pendingCount:pendingCount,status:status,rolloutState:deployments[0].rolloutState,rolloutReason:deployments[0].rolloutStateReason}' \
+    --output table \
+    $PROFILE_FLAG $REGION_FLAG 2>/dev/null || echo "  Could not fetch service status"
+
+  # --- Stopped Tasks ---
+  echo ""
+  echo "🛑 Recently Stopped Tasks:"
+  echo "---------------------------------------------"
+  STOPPED_TASKS=$(aws ecs list-tasks \
+    --cluster "$CLUSTER" \
+    --service-name "$ECS_SERVICE" \
+    --desired-status STOPPED \
+    --query 'taskArns' \
+    --output json \
+    $PROFILE_FLAG $REGION_FLAG 2>/dev/null)
+
+  if [[ "$STOPPED_TASKS" == "[]" || -z "$STOPPED_TASKS" ]]; then
+    echo "  No recently stopped tasks"
+  else
+    aws ecs describe-tasks \
+      --cluster "$CLUSTER" \
+      --tasks $(echo "$STOPPED_TASKS" | jq -r '.[]') \
+      --query 'tasks[].{taskArn:taskArn,stoppedReason:stoppedReason,stopCode:stopCode,lastStatus:lastStatus,exitCode:containers[0].exitCode,containerReason:containers[0].reason,createdAt:createdAt,stoppedAt:stoppedAt}' \
+      --output table \
+      $PROFILE_FLAG $REGION_FLAG 2>/dev/null || echo "  Could not fetch stopped task details"
+  fi
+
+  # --- Running Tasks ---
+  echo ""
+  echo "✅ Running Tasks:"
+  echo "---------------------------------------------"
+  RUNNING_TASKS=$(aws ecs list-tasks \
+    --cluster "$CLUSTER" \
+    --service-name "$ECS_SERVICE" \
+    --desired-status RUNNING \
+    --query 'taskArns' \
+    --output json \
+    $PROFILE_FLAG $REGION_FLAG 2>/dev/null)
+
+  if [[ "$RUNNING_TASKS" == "[]" || -z "$RUNNING_TASKS" ]]; then
+    echo "  No running tasks"
+  else
+    aws ecs describe-tasks \
+      --cluster "$CLUSTER" \
+      --tasks $(echo "$RUNNING_TASKS" | jq -r '.[]') \
+      --query 'tasks[].{taskArn:taskArn,lastStatus:lastStatus,healthStatus:healthStatus,taskDefinition:taskDefinitionArn,createdAt:createdAt,ip:containers[0].networkInterfaces[0].privateIpv4Address}' \
+      --output table \
+      $PROFILE_FLAG $REGION_FLAG 2>/dev/null || echo "  Could not fetch running task details"
+  fi
+
 #
 # TN Models Helpers
 #
