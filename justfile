@@ -1077,6 +1077,357 @@ aws-add-log-viewer service username profile='default' region='us-east-1':
   echo "⚠️  Save these credentials now — the secret key cannot be retrieved again."
   echo "============================================="
 
+# Set up environment-scoped access groups (logs, exec, secrets) for a service+environment
+[group('aws-terraform')]
+aws-setup-env-access service environment profile='default' region='us-east-1':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+
+  if [[ -z "$SERVICE" || -z "$ENVIRONMENT" ]]; then
+    echo "Error: service and environment are required"
+    echo "Usage: tn aws-setup-env-access <service> <environment>"
+    exit 1
+  fi
+
+  run_aws() {
+    if [[ "$AWS_PROFILE" != "default" && -n "$AWS_PROFILE" ]]; then
+      aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+    else
+      aws --region "$AWS_REGION" "$@"
+    fi
+  }
+
+  ACCOUNT_ID=$(run_aws sts get-caller-identity --query Account --output text)
+  PREFIX="${SERVICE}-${ENVIRONMENT}"
+
+  echo "Environment Access Setup"
+  echo "==========================="
+  echo "  Service:     $SERVICE"
+  echo "  Environment: $ENVIRONMENT"
+  echo "  AWS Account: $ACCOUNT_ID"
+  echo "  AWS Region:  $AWS_REGION"
+  echo ""
+
+  # Helper: create or replace an IAM policy
+  upsert_policy() {
+    local POLICY_NAME="$1"
+    local POLICY_FILE="$2"
+    local POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}"
+
+    if run_aws iam get-policy --policy-arn "$POLICY_ARN" &>/dev/null; then
+      echo "  Policy exists, updating..."
+      # Detach from all groups before deleting
+      ATTACHED_GROUPS=$(run_aws iam list-entities-for-policy --policy-arn "$POLICY_ARN" \
+        --query 'PolicyGroups[].GroupName' --output text 2>/dev/null || echo "")
+      for grp in $ATTACHED_GROUPS; do
+        run_aws iam detach-group-policy --group-name "$grp" --policy-arn "$POLICY_ARN" 2>/dev/null || true
+      done
+      run_aws iam list-policy-versions --policy-arn "$POLICY_ARN" \
+        --query 'Versions[?!IsDefaultVersion].[VersionId]' --output text | while read version; do
+        run_aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$version" 2>/dev/null || true
+      done
+      run_aws iam delete-policy --policy-arn "$POLICY_ARN" 2>/dev/null || true
+    fi
+
+    run_aws iam create-policy --policy-name "$POLICY_NAME" \
+      --policy-document "file://${POLICY_FILE}" --output text --query 'Policy.Arn'
+    echo "  Policy created: $POLICY_NAME"
+  }
+
+  # Helper: create group and attach policy
+  setup_group() {
+    local GROUP_NAME="$1"
+    local POLICY_ARN="$2"
+
+    if run_aws iam get-group --group-name "$GROUP_NAME" &>/dev/null; then
+      echo "  Group already exists: $GROUP_NAME"
+    else
+      run_aws iam create-group --group-name "$GROUP_NAME"
+      echo "  Group created: $GROUP_NAME"
+    fi
+    run_aws iam attach-group-policy --group-name "$GROUP_NAME" --policy-arn "$POLICY_ARN"
+    echo "  Policy attached to $GROUP_NAME"
+  }
+
+  # -------------------------------------------------------
+  # 1. LOG VIEWERS — scoped to /ecs/{SERVICE}/{ENVIRONMENT}
+  # -------------------------------------------------------
+  echo "--- Log Viewer Access ---"
+  LOG_POLICY_NAME="${PREFIX}-log-viewer"
+  LOG_GROUP_ARN="arn:aws:logs:${AWS_REGION}:${ACCOUNT_ID}:log-group:/ecs/${SERVICE}/${ENVIRONMENT}:*"
+
+  jq -n --arg lg_arn "$LOG_GROUP_ARN" '{
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "DescribeLogGroups",
+        Effect: "Allow",
+        Action: ["logs:DescribeLogGroups"],
+        Resource: "*"
+      },
+      {
+        Sid: "ReadLogStreams",
+        Effect: "Allow",
+        Action: [
+          "logs:DescribeLogStreams",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents",
+          "logs:StartQuery",
+          "logs:GetQueryResults",
+          "logs:StopQuery"
+        ],
+        Resource: $lg_arn
+      }
+    ]
+  }' > /tmp/${PREFIX}-log-policy.json
+
+  upsert_policy "$LOG_POLICY_NAME" "/tmp/${PREFIX}-log-policy.json"
+  setup_group "${PREFIX}-log-viewers" "arn:aws:iam::${ACCOUNT_ID}:policy/${LOG_POLICY_NAME}"
+  rm -f /tmp/${PREFIX}-log-policy.json
+  echo ""
+
+  # -------------------------------------------------------
+  # 2. ECS OPERATORS — exec + events for cluster-{SERVICE}-{ENVIRONMENT}
+  # -------------------------------------------------------
+  echo "--- ECS Exec Access ---"
+  ECS_POLICY_NAME="${PREFIX}-ecs-operator"
+  CLUSTER_ARN="arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:cluster/cluster-${SERVICE}-${ENVIRONMENT}"
+  SERVICE_ARN="arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:service/cluster-${SERVICE}-${ENVIRONMENT}/*"
+  TASK_ARN="arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:task/cluster-${SERVICE}-${ENVIRONMENT}/*"
+
+  jq -n \
+    --arg cluster "$CLUSTER_ARN" \
+    --arg service "$SERVICE_ARN" \
+    --arg task "$TASK_ARN" '{
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "ECSDescribe",
+        Effect: "Allow",
+        Action: [
+          "ecs:DescribeClusters",
+          "ecs:ListServices",
+          "ecs:DescribeServices",
+          "ecs:ListTasks",
+          "ecs:DescribeTasks"
+        ],
+        Resource: [$cluster, $service, $task]
+      },
+      {
+        Sid: "ECSExec",
+        Effect: "Allow",
+        Action: ["ecs:ExecuteCommand"],
+        Resource: $task
+      },
+      {
+        Sid: "ECSTaskDefinition",
+        Effect: "Allow",
+        Action: ["ecs:DescribeTaskDefinition"],
+        Resource: "*"
+      },
+      {
+        Sid: "SSMSession",
+        Effect: "Allow",
+        Action: ["ssm:StartSession"],
+        Resource: "*",
+        Condition: {
+          StringEquals: { "aws:ResourceTag/aws:ecs:clusterName": ("cluster-" + ($cluster | split("/")[-1] | split("cluster-")[-1])) }
+        }
+      }
+    ]
+  }' > /tmp/${PREFIX}-ecs-policy.json
+
+  # Fix the SSM condition — just use the cluster name directly
+  CLUSTER_NAME="cluster-${SERVICE}-${ENVIRONMENT}"
+  jq -n \
+    --arg cluster "$CLUSTER_ARN" \
+    --arg service "$SERVICE_ARN" \
+    --arg task "$TASK_ARN" \
+    --arg cluster_name "$CLUSTER_NAME" '{
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "ECSDescribe",
+        Effect: "Allow",
+        Action: [
+          "ecs:DescribeClusters",
+          "ecs:ListServices",
+          "ecs:DescribeServices",
+          "ecs:ListTasks",
+          "ecs:DescribeTasks"
+        ],
+        Resource: [$cluster, $service, $task]
+      },
+      {
+        Sid: "ECSExec",
+        Effect: "Allow",
+        Action: ["ecs:ExecuteCommand"],
+        Resource: $task
+      },
+      {
+        Sid: "ECSTaskDefinition",
+        Effect: "Allow",
+        Action: ["ecs:DescribeTaskDefinition"],
+        Resource: "*"
+      },
+      {
+        Sid: "SSMSession",
+        Effect: "Allow",
+        Action: ["ssm:StartSession"],
+        Resource: "*"
+      }
+    ]
+  }' > /tmp/${PREFIX}-ecs-policy.json
+
+  upsert_policy "$ECS_POLICY_NAME" "/tmp/${PREFIX}-ecs-policy.json"
+  setup_group "${PREFIX}-ecs-operators" "arn:aws:iam::${ACCOUNT_ID}:policy/${ECS_POLICY_NAME}"
+  rm -f /tmp/${PREFIX}-ecs-policy.json
+  echo ""
+
+  # -------------------------------------------------------
+  # 3. SECRETS READERS — S3 read for {SERVICE}-terraform-secrets/{ENVIRONMENT}/*
+  # -------------------------------------------------------
+  echo "--- Secrets Read Access ---"
+  SECRETS_POLICY_NAME="${PREFIX}-secrets-reader"
+  SECRETS_BUCKET="${SERVICE}-terraform-secrets"
+
+  jq -n \
+    --arg bucket "$SECRETS_BUCKET" \
+    --arg env "$ENVIRONMENT" '{
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "SecretsRead",
+        Effect: "Allow",
+        Action: ["s3:GetObject"],
+        Resource: ("arn:aws:s3:::" + $bucket + "/" + $env + "/*")
+      },
+      {
+        Sid: "SecretsList",
+        Effect: "Allow",
+        Action: ["s3:ListBucket"],
+        Resource: ("arn:aws:s3:::" + $bucket),
+        Condition: { StringLike: { "s3:prefix": ($env + "/*") } }
+      }
+    ]
+  }' > /tmp/${PREFIX}-secrets-policy.json
+
+  upsert_policy "$SECRETS_POLICY_NAME" "/tmp/${PREFIX}-secrets-policy.json"
+  setup_group "${PREFIX}-secrets-readers" "arn:aws:iam::${ACCOUNT_ID}:policy/${SECRETS_POLICY_NAME}"
+  rm -f /tmp/${PREFIX}-secrets-policy.json
+  echo ""
+
+  # Summary
+  echo "==========================="
+  echo "Setup complete for $SERVICE / $ENVIRONMENT"
+  echo ""
+  echo "Groups created:"
+  echo "  ${PREFIX}-log-viewers       → CloudWatch logs (/ecs/${SERVICE}/${ENVIRONMENT})"
+  echo "  ${PREFIX}-ecs-operators     → ECS exec & diagnostics (cluster-${SERVICE}-${ENVIRONMENT})"
+  echo "  ${PREFIX}-secrets-readers   → S3 secrets read (${SECRETS_BUCKET}/${ENVIRONMENT}/*)"
+  echo ""
+  echo "Next: add users with"
+  echo "  tn aws-add-env-user $SERVICE $ENVIRONMENT <username>"
+
+# Add an IAM user to a service+environment's access groups (creates the user + keys if needed)
+[group('aws-terraform')]
+aws-add-env-user service environment username profile='default' region='us-east-1':
+  #!/usr/bin/env bash
+  set -e
+
+  SERVICE="{{service}}"
+  ENVIRONMENT="{{environment}}"
+  USERNAME="{{username}}"
+  AWS_PROFILE="{{profile}}"
+  AWS_REGION="{{region}}"
+
+  if [[ -z "$SERVICE" || -z "$ENVIRONMENT" || -z "$USERNAME" ]]; then
+    echo "Error: service, environment, and username are required"
+    echo "Usage: tn aws-add-env-user <service> <environment> <username>"
+    exit 1
+  fi
+
+  run_aws() {
+    if [[ "$AWS_PROFILE" != "default" && -n "$AWS_PROFILE" ]]; then
+      aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"
+    else
+      aws --region "$AWS_REGION" "$@"
+    fi
+  }
+
+  PREFIX="${SERVICE}-${ENVIRONMENT}"
+  GRP_LOGS="${PREFIX}-log-viewers"
+  GRP_ECS="${PREFIX}-ecs-operators"
+  GRP_SECRETS="${PREFIX}-secrets-readers"
+
+  # Verify all groups exist
+  for grp in "$GRP_LOGS" "$GRP_ECS" "$GRP_SECRETS"; do
+    if ! run_aws iam get-group --group-name "$grp" --max-items 0 >/dev/null 2>&1; then
+      echo "Error: Group '$grp' does not exist."
+      echo "Run 'tn aws-setup-env-access $SERVICE $ENVIRONMENT' first."
+      exit 1
+    fi
+  done
+
+  # Create IAM user if it doesn't exist
+  CREATED_USER=false
+  if run_aws iam get-user --user-name "$USERNAME" >/dev/null 2>&1; then
+    echo "User '$USERNAME' already exists"
+  else
+    echo "Creating IAM user '$USERNAME'..."
+    run_aws iam create-user --user-name "$USERNAME" --output text --query 'User.Arn'
+    CREATED_USER=true
+    echo "User created"
+  fi
+
+  # Add to all groups
+  for grp in "$GRP_LOGS" "$GRP_ECS" "$GRP_SECRETS"; do
+    echo "Adding '$USERNAME' to group '$grp'..."
+    run_aws iam add-user-to-group --group-name "$grp" --user-name "$USERNAME"
+  done
+  echo "Added to all ${ENVIRONMENT} groups"
+
+  # Generate access keys only if user was just created
+  if [[ "$CREATED_USER" == "true" ]]; then
+    echo ""
+    echo "Generating access keys..."
+    KEYS=$(run_aws iam create-access-key --user-name "$USERNAME" --output json)
+
+    ACCESS_KEY=$(echo "$KEYS" | jq -r '.AccessKey.AccessKeyId')
+    SECRET_KEY=$(echo "$KEYS" | jq -r '.AccessKey.SecretAccessKey')
+
+    echo ""
+    echo "============================================="
+    echo "  Credentials for $USERNAME"
+    echo "============================================="
+    echo ""
+    echo "Add this to ~/.aws/credentials:"
+    echo ""
+    echo "  [$SERVICE]"
+    echo "  aws_access_key_id = $ACCESS_KEY"
+    echo "  aws_secret_access_key = $SECRET_KEY"
+    echo ""
+    echo "Save these credentials now — the secret key"
+    echo "cannot be retrieved again."
+    echo "============================================="
+  else
+    echo ""
+    echo "User already existed — no new keys generated."
+    echo "Existing credentials for '$USERNAME' now have"
+    echo "${ENVIRONMENT} access via group membership."
+  fi
+
+  echo ""
+  echo "User '$USERNAME' now has ${ENVIRONMENT} access:"
+  echo "  Logs:    tn aws-stream-logs $SERVICE $ENVIRONMENT $SERVICE $AWS_REGION"
+  echo "  Events:  tn aws-ecs-events $SERVICE $ENVIRONMENT $SERVICE $AWS_REGION"
+  echo "  Exec:    tn aws-ecs-exec $SERVICE $ENVIRONMENT $SERVICE $AWS_REGION"
+
 # Create S3 bucket for secrets storage with proper security
 [group('aws-terraform')]
 aws-setup-secrets service environment profile='default' region='us-east-1':
