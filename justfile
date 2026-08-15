@@ -1657,7 +1657,7 @@ aws-ecs-exec service environment='development' profile='default' region='us-east
     $PROFILE_FLAG $REGION_FLAG
 # Stream CloudWatch logs from ECS services
 [group('aws-terraform')]
-aws-stream-logs service environment='development' profile='default' region='us-east-1' stream_type='a' filter='' duration='5m':
+aws-stream-logs service environment='development' profile='default' region='us-east-1' duration='5m' stream_type='a' filter='':
   #!/usr/bin/env bash
   set -e
 
@@ -1750,14 +1750,19 @@ aws-stream-logs service environment='development' profile='default' region='us-e
     exit 1
   fi
 
-  # Validate duration format
-  if [[ ! "$START_TIME" =~ ^[0-9]+[mh]$ ]]; then
+  # Validate duration format and compute start time in epoch milliseconds
+  if [[ "$START_TIME" =~ ^([0-9]+)m$ ]]; then
+    OFFSET_SECS=$(( ${BASH_REMATCH[1]} * 60 ))
+  elif [[ "$START_TIME" =~ ^([0-9]+)h$ ]]; then
+    OFFSET_SECS=$(( ${BASH_REMATCH[1]} * 3600 ))
+  else
     echo "Error: Invalid duration format. Use '30m' or '2h'"
     exit 1
   fi
+  START_MS=$(( ($(date +%s) - OFFSET_SECS) * 1000 ))
 
   # Build filter command
-  FILTER_CMD="aws logs filter-log-events --log-group-name \"$LOG_GROUP\" --start-time \$(date -v-${START_TIME} +%s)000 $PROFILE_FLAG $REGION_FLAG"
+  FILTER_CMD="aws logs filter-log-events --log-group-name \"$LOG_GROUP\" --start-time $START_MS $PROFILE_FLAG $REGION_FLAG"
 
   if [[ -n "$FILTER_PATTERN" ]]; then
     FILTER_CMD="$FILTER_CMD --filter-pattern \"$FILTER_PATTERN\""
@@ -1798,6 +1803,10 @@ aws-stream-logs service environment='development' profile='default' region='us-e
           message=$(echo "$event" | jq -r '.message // empty')
           stream=$(echo "$event" | jq -r '.logStreamName // empty')
           if [[ -n "$timestamp" && -n "$message" ]]; then
+            # Skip common Django noise (DisallowedHost, SuspiciousOperation, phishing probes)
+            if echo "$message" | grep -qiE 'DisallowedHost|Invalid HTTP_HOST header|SuspiciousOperation'; then
+              continue
+            fi
             formatted_time=$(date -r "$((timestamp/1000))" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$timestamp")
             stream_short=$(basename "$stream")
             echo "[$formatted_time] [$stream_short] $message"
